@@ -1,10 +1,14 @@
 #include "ImageReader.h"
 
+// Initialize mock PCL API before including PCL headers
+#include "PCLMockAPI.h"
+
 // PCL includes
 #include <pcl/Image.h>
 #include <pcl/XISF.h>
 #include <pcl/String.h>
 #include <pcl/Property.h>
+#include <pcl/api/APIInterface.h>
 
 // FITS support - we confirmed this works
 #include <FITS/FITS.h>
@@ -19,8 +23,29 @@ class ImageReaderPrivate
 public:
     ImageData imageData;
     QString lastError;
+    bool mockInitialized = false;
+    
+    void initializePCLMock() {
+        if (!mockInitialized) {
+            qDebug() << "Initializing PCL Mock API...";
+            
+            // Initialize the mock API
+            pcl_mock::SetDebugLogging(false); // Set to true for debug output
+            pcl_mock::InitializeMockAPI();
+            
+            // Create API interface with mock function resolver
+            if (!API) {
+                API = new pcl::APIInterface(pcl_mock::GetMockFunctionResolver());
+            }
+            
+            mockInitialized = true;
+            qDebug() << "PCL Mock API initialized successfully";
+        }
+    }
     
     bool readXISF(const QString& filePath) {
+        initializePCLMock();
+        
         try {
             pcl::XISFReader reader;
             pcl::String pclPath(filePath.toUtf8().constData());
@@ -34,6 +59,7 @@ public:
             
             // Read the first image
             pcl::Image pclImage;
+	    //	    reader.Setindex(0);
             reader.ReadImage(pclImage);
             
             // Extract image dimensions and format info
@@ -100,10 +126,13 @@ public:
     }
     
     bool readFITS(const QString& filePath) {
+        initializePCLMock();
+        
         try {
             qDebug() << "Attempting to read FITS file:" << filePath;
             
             pcl::FITSReader reader;
+	    ((pcl::FITSReader &)reader).SetIndex(0);
             pcl::String pclPath(filePath.toUtf8().constData());
             
             qDebug() << "Opening FITS file...";
@@ -200,7 +229,7 @@ public:
             return true;
             
         } catch (const pcl::Error& e) {
-            lastError = QString("PCL FITS Error: %1\n\nThis FITS file may have corrupted WCS keywords or unsupported format variations.\nThe file structure appears valid but PCL cannot process it.").arg(e.Message().c_str());
+            lastError = QString("PCL FITS Error: %1\n\nThis FITS file may have corrupted WCS keywords or unsupported format variations.\nThe file structure appears valid but PCL cannot process it.\n\nNote: Using mock PCL API - some features may be limited.").arg(e.Message().c_str());
             qDebug() << "PCL FITS Error:" << e.Message().c_str();
             qDebug() << "File path:" << filePath;
             return false;

@@ -1,11 +1,15 @@
 #include "SimplifiedXISFWriter.h"
 
+// Initialize mock PCL API before including PCL headers
+#include "PCLMockAPI.h"
+
 // Now we can safely include PCL headers in the .cpp file
 #include <pcl/Image.h>
 #include <pcl/Property.h>
 #include <pcl/Variant.h>
 #include <pcl/String.h>
 #include <pcl/XISF.h>
+#include <pcl/api/APIInterface.h>
 
 // Your project includes
 #include "StellinaProcessor.h"
@@ -14,6 +18,9 @@
 // Qt includes
 #include <QDebug>
 #include <QDateTime>
+
+// Ensure PCL globals are defined
+static api_handle s_moduleHandle;
 
 // Private implementation class
 class SimplifiedXISFWriterPrivate
@@ -52,6 +59,7 @@ public:
     QString filePath;
     QString creatorApplication = "StellinaProcessor";
     QString lastError;
+    bool mockInitialized = false;
     
     CompressionType compressionType = CompressionType::ZLib;
     int compressionLevel = 6;
@@ -62,15 +70,39 @@ public:
     QList<PropertyData> globalProperties;
     QList<PropertyData> pendingImageProperties;
 
+    void initializePCLMock() {
+        if (!mockInitialized) {
+            qDebug() << "Initializing PCL Mock API for XISF Writer...";
+            
+            // Initialize the mock API
+            pcl_mock::SetDebugLogging(false); // Set to true for debug output
+            pcl_mock::InitializeMockAPI();
+            
+            // Create API interface with mock function resolver if not already created
+            if (!API) {
+                API = new pcl::APIInterface(pcl_mock::GetMockFunctionResolver());
+            }
+            
+            // Set module handle if not already set
+            if (!s_moduleHandle) {
+                pcl_mock::SetModuleHandle((void*)0x12345678);
+                s_moduleHandle = pcl_mock::GetModuleHandle();
+            }
+            
+            mockInitialized = true;
+            qDebug() << "PCL Mock API initialized successfully for XISF Writer";
+        }
+    }
+
     // Convert our enum to PCL enum
     pcl::XISFCompression::value_type getPCLCompression() const
     {
         switch (compressionType) {
-	case CompressionType::None: return (pcl::XISFCompression::value_type) 0;
-	case CompressionType::ZLib: return (pcl::XISFCompression::value_type) 1;
-	case CompressionType::LZ4:  return (pcl::XISFCompression::value_type) 2;
-	case CompressionType::ZSTD: return (pcl::XISFCompression::value_type) 4;
-	default: return (pcl::XISFCompression::value_type) 1;
+        case CompressionType::None: return (pcl::XISFCompression::value_type) 0;
+        case CompressionType::ZLib: return (pcl::XISFCompression::value_type) 1;
+        case CompressionType::LZ4:  return (pcl::XISFCompression::value_type) 2;
+        case CompressionType::ZSTD: return (pcl::XISFCompression::value_type) 4;
+        default: return (pcl::XISFCompression::value_type) 1;
         }
     }
 
@@ -245,6 +277,7 @@ void SimplifiedXISFWriter::setVerbosity(int level)
 {
     d->verbosity = level;
 }
+
 bool SimplifiedXISFWriter::write()
 {
     if (d->images.isEmpty()) {
@@ -252,6 +285,9 @@ bool SimplifiedXISFWriter::write()
         qDebug() << d->lastError;
         return false;
     }
+
+    // Initialize mock PCL API
+    d->initializePCLMock();
 
     try {
         // Create PCL XISF writer
@@ -325,7 +361,7 @@ bool SimplifiedXISFWriter::write()
         return true;
     }
     catch (const pcl::Error& e) {
-        d->lastError = QString("PCL Error: %1").arg(e.Message().c_str());
+        d->lastError = QString("PCL Error: %1\n\nNote: Using mock PCL API - some features may be limited.").arg(e.Message().c_str());
         qDebug() << d->lastError;
         return false;
     }

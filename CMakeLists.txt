@@ -19,6 +19,7 @@ set(PCL_INCLUDE_DIRS
     "${PCL_ROOT}/include" 
     "${PCL_ROOT}/src/3rdparty"
     "${PCL_ROOT}/src/modules/file-formats"
+    "${PCL_ROOT}/src"
 )
 set(PCL_LIBRARY_DIR "${PCL_ROOT}/src/pcl/macosx/g++/arm64/Release")
 
@@ -68,6 +69,28 @@ target_include_directories(pcl_sha PUBLIC
     "${PCL_ROOT}/src/3rdparty"
 )
 
+# Add PCL Mock Library
+add_library(pcl_mock STATIC
+    PCLMockAPI.cpp
+    PCLThreadMock.cpp
+)
+
+set_target_properties(pcl_mock PROPERTIES
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED ON
+    POSITION_INDEPENDENT_CODE ON
+)
+
+target_include_directories(pcl_mock PUBLIC
+    ${PCL_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+target_compile_definitions(pcl_mock PRIVATE
+    __PCL_MACOSX
+    __PCL_NO_PERFORMANCE_CRITICAL_MATH_ROUTINES
+)
+
 # Third-party libraries
 find_library(LZ4_LIBRARY lz4 PATHS /opt/homebrew/lib)
 find_library(ZSTD_LIBRARY zstd PATHS /opt/homebrew/lib)
@@ -92,7 +115,7 @@ set(PROJECT_INCLUDE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
-# Define sources - UPDATED with FITS support
+# Define sources - Include FITS source directly
 set(SOURCES
     main.cpp
     MainWindow.cpp
@@ -100,7 +123,7 @@ set(SOURCES
     ImageReader.cpp
     ImageDisplayWidget.cpp
     ImageStatistics.cpp
-    /Users/jonathan/PCL/src/modules/file-formats/FITS/FITS.cpp
+    ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
 )
 
 set(HEADERS
@@ -109,6 +132,8 @@ set(HEADERS
     ImageReader.h
     ImageDisplayWidget.h
     ImageStatistics.h
+    PCLMockAPI.h
+    PCLThreadMock.h
 )
 
 # Create executable
@@ -130,10 +155,11 @@ target_include_directories(XISFTestCreator PRIVATE
     /opt/homebrew/include
 )
 
-# Link libraries
+# Link libraries - Add pcl_mock BEFORE PCL library
 target_link_libraries(XISFTestCreator PRIVATE
     Qt6::Core
     Qt6::Widgets
+    pcl_mock           # Add mock library first
     ${PCL_LIBRARY}
     pcl_sha
     ${LZ4_LIBRARY}
@@ -167,6 +193,7 @@ target_compile_options(XISFTestCreator PRIVATE
     -Wno-dangling-else
     -Wno-extern-c-compat
     -Wno-asm-operand-widths
+    -O0 -g
 )
 
 # Debug output
