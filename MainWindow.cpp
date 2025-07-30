@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 #include "SimplifiedXISFWriter.h"
+#include "ImageReader.h"
+#include "ImageDisplayWidget.h"
+#include "ImageStatistics.h"
 
 #include <QFileDialog>
 #include <QMessageBox>
@@ -21,13 +24,22 @@
 #include <QDateTime>
 #include <QStandardPaths>
 #include <QDir>
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QTabWidget>
+#include <QSplitter>
+#include <QFileInfo>
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_centralWidget(nullptr)
+    , m_tabWidget(nullptr)
     , m_previewTimer(new QTimer(this))
+    , m_imageReader(std::make_unique<ImageReader>())
+    , m_imageStats(std::make_unique<ImageStatistics>())
 {
     setupUI();
+    setupMenuBar();
     
     // Set up preview timer (debounced updates)
     m_previewTimer->setSingleShot(true);
@@ -44,14 +56,53 @@ MainWindow::~MainWindow() = default;
 
 void MainWindow::setupUI()
 {
-    setWindowTitle("XISF Test Creator");
-    setMinimumSize(600, 500);
-    resize(800, 600);
+    setWindowTitle("XISF Test Creator - Enhanced");
+    setMinimumSize(800, 600);
+    resize(1200, 800);
     
-    m_centralWidget = new QWidget;
-    setCentralWidget(m_centralWidget);
+    // Create main tab widget
+    m_tabWidget = new QTabWidget;
+    setCentralWidget(m_tabWidget);
     
-    auto* mainLayout = new QVBoxLayout(m_centralWidget);
+    setupCreateTab();
+    setupViewTab();
+    
+    // Status bar
+    statusBar()->showMessage("Ready");
+}
+
+void MainWindow::setupMenuBar()
+{
+    // File menu
+    QMenu* fileMenu = menuBar()->addMenu("&File");
+    
+    QAction* openAction = fileMenu->addAction("&Open Image...");
+    openAction->setShortcut(QKeySequence::Open);
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFileClicked);
+    
+    QAction* saveAsAction = fileMenu->addAction("Save &As...");
+    saveAsAction->setShortcut(QKeySequence::SaveAs);
+    connect(saveAsAction, &QAction::triggered, this, &MainWindow::onSaveAsClicked);
+    
+    fileMenu->addSeparator();
+    
+    QAction* exitAction = fileMenu->addAction("E&xit");
+    exitAction->setShortcut(QKeySequence::Quit);
+    connect(exitAction, &QAction::triggered, this, &QWidget::close);
+    
+    // View menu
+    QMenu* viewMenu = menuBar()->addMenu("&View");
+    viewMenu->addAction("&Create Tab", [this]() { m_tabWidget->setCurrentIndex(0); });
+    viewMenu->addAction("&View Tab", [this]() { m_tabWidget->setCurrentIndex(1); });
+}
+
+void MainWindow::setupCreateTab()
+{
+    m_createTab = new QWidget;
+    m_tabWidget->addTab(m_createTab, "Create XISF");
+    
+    m_createCentralWidget = m_createTab;
+    auto* mainLayout = new QVBoxLayout(m_createCentralWidget);
     
     // Image Settings Group
     m_imageGroup = new QGroupBox("Image Settings");
@@ -124,6 +175,281 @@ void MainWindow::setupUI()
     mainLayout->setStretchFactor(m_imageGroup, 1);
     mainLayout->setStretchFactor(m_actionGroup, 0);
     mainLayout->setStretchFactor(m_logGroup, 0);
+}
+
+void MainWindow::setupViewTab()
+{
+    m_viewTab = new QWidget;
+    m_tabWidget->addTab(m_viewTab, "View Images");
+    
+    auto* viewLayout = new QVBoxLayout(m_viewTab);
+    
+    // File operations toolbar
+    auto* fileToolbar = new QWidget;
+    auto* fileLayout = new QHBoxLayout(fileToolbar);
+    fileLayout->setContentsMargins(5,5,5,5);
+    
+    m_openButton = new QPushButton("Open Image...");
+    m_openButton->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    connect(m_openButton, &QPushButton::clicked, this, &MainWindow::onOpenFileClicked);
+    fileLayout->addWidget(m_openButton);
+    
+    m_saveAsButton = new QPushButton("Save As...");
+    m_saveAsButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_saveAsButton->setEnabled(false);
+    connect(m_saveAsButton, &QPushButton::clicked, this, &MainWindow::onSaveAsClicked);
+    fileLayout->addWidget(m_saveAsButton);
+    
+    fileLayout->addStretch();
+    
+    m_statusLabel = new QLabel("No image loaded");
+    fileLayout->addWidget(m_statusLabel);
+    
+    viewLayout->addWidget(fileToolbar);
+    
+    // Main splitter
+    m_viewSplitter = new QSplitter(Qt::Horizontal);
+    viewLayout->addWidget(m_viewSplitter, 1);
+    
+    // Image display
+    m_imageDisplay = new ImageDisplayWidget;
+    connect(m_imageDisplay, &ImageDisplayWidget::imageClicked, 
+            this, &MainWindow::onImageClicked);
+    connect(m_imageDisplay, &ImageDisplayWidget::zoomChanged,
+            this, &MainWindow::onZoomChanged);
+    m_viewSplitter->addWidget(m_imageDisplay);
+    
+    // Info panel
+    setupInfoPanel();
+    
+    // Set splitter proportions
+    m_viewSplitter->setStretchFactor(0, 3); // Image display gets more space
+    m_viewSplitter->setStretchFactor(1, 1); // Info panel gets less space
+    m_viewSplitter->setSizes({800, 300});
+}
+
+void MainWindow::setupInfoPanel()
+{
+    m_infoPanel = new QWidget;
+    m_infoPanel->setMinimumWidth(250);
+    m_infoPanel->setMaximumWidth(400);
+    
+    auto* infoPanelLayout = new QVBoxLayout(m_infoPanel);
+    
+    // File info
+    m_fileInfoGroup = new QGroupBox("File Information");
+    auto* fileInfoLayout = new QVBoxLayout(m_fileInfoGroup);
+    m_fileInfoText = new QTextEdit;
+    m_fileInfoText->setMaximumHeight(80);
+    m_fileInfoText->setReadOnly(true);
+    fileInfoLayout->addWidget(m_fileInfoText);
+    infoPanelLayout->addWidget(m_fileInfoGroup);
+    
+    // Image info
+    m_imageInfoGroup = new QGroupBox("Image Information");
+    auto* imageInfoLayout = new QVBoxLayout(m_imageInfoGroup);
+    m_imageInfoText = new QTextEdit;
+    m_imageInfoText->setMaximumHeight(100);
+    m_imageInfoText->setReadOnly(true);
+    imageInfoLayout->addWidget(m_imageInfoText);
+    infoPanelLayout->addWidget(m_imageInfoGroup);
+    
+    // Statistics
+    m_statisticsGroup = new QGroupBox("Image Statistics");
+    auto* statisticsLayout = new QVBoxLayout(m_statisticsGroup);
+    m_statisticsText = new QTextEdit;
+    m_statisticsText->setMaximumHeight(120);
+    m_statisticsText->setReadOnly(true);
+    statisticsLayout->addWidget(m_statisticsText);
+    infoPanelLayout->addWidget(m_statisticsGroup);
+    
+    // Pixel info
+    m_pixelInfoGroup = new QGroupBox("Pixel Information");
+    auto* pixelInfoLayout = new QVBoxLayout(m_pixelInfoGroup);
+    m_pixelInfoText = new QTextEdit;
+    m_pixelInfoText->setMaximumHeight(60);
+    m_pixelInfoText->setReadOnly(true);
+    pixelInfoLayout->addWidget(m_pixelInfoText);
+    infoPanelLayout->addWidget(m_pixelInfoGroup);
+    
+    // Metadata
+    m_metadataGroup = new QGroupBox("Metadata");
+    auto* metadataLayout = new QVBoxLayout(m_metadataGroup);
+    m_metadataText = new QTextEdit;
+    m_metadataText->setReadOnly(true);
+    metadataLayout->addWidget(m_metadataText);
+    infoPanelLayout->addWidget(m_metadataGroup);
+    
+    // Set stretch factors so metadata gets most space
+    infoPanelLayout->setStretchFactor(m_fileInfoGroup, 0);
+    infoPanelLayout->setStretchFactor(m_imageInfoGroup, 0);
+    infoPanelLayout->setStretchFactor(m_statisticsGroup, 0);
+    infoPanelLayout->setStretchFactor(m_pixelInfoGroup, 0);
+    infoPanelLayout->setStretchFactor(m_metadataGroup, 1);
+    
+    m_viewSplitter->addWidget(m_infoPanel);
+}
+
+void MainWindow::onOpenFileClicked()
+{
+    QString filter = ImageReader::formatFilter();
+    QString fileName = QFileDialog::getOpenFileName(
+        this,
+        "Open Image File",
+        m_currentFilePath.isEmpty() ? 
+            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) : 
+            QFileInfo(m_currentFilePath).absolutePath(),
+        filter
+    );
+    
+    if (!fileName.isEmpty()) {
+        loadImageFile(fileName);
+        // Switch to view tab
+        m_tabWidget->setCurrentIndex(1);
+    }
+}
+
+void MainWindow::onSaveAsClicked()
+{
+    if (!m_imageReader->hasImage()) {
+        QMessageBox::information(this, "No Image", "No image is currently loaded to save.");
+        return;
+    }
+    
+    // For now, just show info about the current image
+    // In a full implementation, you would implement saving in various formats
+    QMessageBox::information(this, "Save As", 
+        "Save functionality would be implemented here.\n"
+        "Current image could be saved as XISF, FITS, or other formats.");
+}
+
+void MainWindow::loadImageFile(const QString& filePath)
+{
+    statusBar()->showMessage("Loading image...");
+    QApplication::processEvents();
+    
+    m_imageReader->clear();
+    
+    if (m_imageReader->readFile(filePath)) {
+        m_currentFilePath = filePath;
+        const ImageData& imageData = m_imageReader->imageData();
+        
+        // Update displays
+        m_imageDisplay->setImageData(imageData);
+        updateImageInfo();
+        updateImageStatistics();
+        
+        m_saveAsButton->setEnabled(true);
+        
+        QString message = QString("Loaded: %1 (%2×%3×%4)")
+                         .arg(QFileInfo(filePath).fileName())
+                         .arg(imageData.width)
+                         .arg(imageData.height) 
+                         .arg(imageData.channels);
+        statusBar()->showMessage(message);
+        m_statusLabel->setText(message);
+        
+        logMessage(QString("✓ Successfully loaded: %1").arg(QFileInfo(filePath).fileName()));
+        
+    } else {
+        QString error = QString("Failed to load image: %1").arg(m_imageReader->lastError());
+        statusBar()->showMessage("Failed to load image");
+        m_statusLabel->setText("Load failed");
+        
+        QMessageBox::critical(this, "Load Error", error);
+        logMessage(QString("✗ %1").arg(error));
+    }
+}
+
+void MainWindow::updateImageInfo()
+{
+    if (!m_imageReader->hasImage()) {
+        m_fileInfoText->clear();
+        m_imageInfoText->clear();
+        m_metadataText->clear();
+        return;
+    }
+    
+    const ImageData& imageData = m_imageReader->imageData();
+    
+    // File information
+    QFileInfo fileInfo(m_currentFilePath);
+    QString fileInfoStr = QString(
+        "Name: %1\n"
+        "Size: %2 bytes\n"
+        "Modified: %3"
+    ).arg(fileInfo.fileName())
+     .arg(fileInfo.size())
+     .arg(fileInfo.lastModified().toString());
+    m_fileInfoText->setPlainText(fileInfoStr);
+    
+    // Image information
+    QString imageInfoStr = QString(
+        "Dimensions: %1 × %2\n"
+        "Channels: %3\n"
+        "Color Space: %4\n"
+        "Format: %5\n"
+        "Total Pixels: %6"
+    ).arg(imageData.width)
+     .arg(imageData.height)
+     .arg(imageData.channels)
+     .arg(imageData.colorSpace)
+     .arg(imageData.format)
+     .arg(imageData.width * imageData.height);
+    m_imageInfoText->setPlainText(imageInfoStr);
+    
+    // Metadata
+    m_metadataText->setPlainText(imageData.metadata.join("\n"));
+}
+
+void MainWindow::updateImageStatistics()
+{
+    if (!m_imageReader->hasImage()) {
+        m_statisticsText->clear();
+        return;
+    }
+    
+    const ImageData& imageData = m_imageReader->imageData();
+    
+    m_imageStats->calculate(imageData.pixels.constData(), imageData.pixels.size());
+    m_statisticsText->setPlainText(m_imageStats->toDetailedString());
+}
+
+void MainWindow::onImageClicked(int x, int y, float value)
+{
+    if (!m_imageReader->hasImage()) {
+        return;
+    }
+    
+    const ImageData& imageData = m_imageReader->imageData();
+    
+    QString pixelInfo;
+    if (imageData.channels == 1) {
+        pixelInfo = QString("Position: (%1, %2)\nValue: %3")
+                   .arg(x).arg(y).arg(value, 0, 'g', 6);
+    } else {
+        // For multi-channel images, show values for all channels at this pixel
+        int pixelIndex = y * imageData.width + x;
+        QStringList channelValues;
+        
+        for (int c = 0; c < imageData.channels; ++c) {
+            int channelPixelIndex = pixelIndex + c * imageData.width * imageData.height;
+            if (channelPixelIndex < imageData.pixels.size()) {
+                float channelValue = imageData.pixels[channelPixelIndex];
+                channelValues.append(QString("Ch%1: %2").arg(c).arg(channelValue, 0, 'g', 6));
+            }
+        }
+        
+        pixelInfo = QString("Position: (%1, %2)\n%3")
+                   .arg(x).arg(y).arg(channelValues.join("\n"));
+    }
+    
+    m_pixelInfoText->setPlainText(pixelInfo);
+}
+
+void MainWindow::onZoomChanged(double factor)
+{
+    statusBar()->showMessage(QString("Zoom: %1%").arg(static_cast<int>(factor * 100)), 2000);
 }
 
 void MainWindow::onImageSizeChanged()
@@ -216,7 +542,7 @@ void MainWindow::onCreateXISFClicked()
         }
         
         SimplifiedXISFWriter writer(fileName, compression);
-        writer.setCreatorApplication("XISF Test Creator");
+        writer.setCreatorApplication("XISF Test Creator - Enhanced");
         writer.setVerbosity(0); // Quiet mode for GUI
         
         // Add some metadata
@@ -289,5 +615,3 @@ void MainWindow::logMessage(const QString& message)
     
     QApplication::processEvents(); // Update UI immediately
 }
-
-#include "MainWindow.moc"

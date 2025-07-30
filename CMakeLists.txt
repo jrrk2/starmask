@@ -15,7 +15,11 @@ set(CMAKE_AUTOMOC ON)
 
 # PCL Configuration
 set(PCL_ROOT "/Users/jonathan/PCL" CACHE PATH "PCL root directory")
-set(PCL_INCLUDE_DIRS "${PCL_ROOT}/include" "${PCL_ROOT}/src/3rdparty")
+set(PCL_INCLUDE_DIRS 
+    "${PCL_ROOT}/include" 
+    "${PCL_ROOT}/src/3rdparty"
+    "${PCL_ROOT}/src/modules/file-formats"
+)
 set(PCL_LIBRARY_DIR "${PCL_ROOT}/src/pcl/macosx/g++/arm64/Release")
 
 # Find PCL library
@@ -69,6 +73,7 @@ find_library(LZ4_LIBRARY lz4 PATHS /opt/homebrew/lib)
 find_library(ZSTD_LIBRARY zstd PATHS /opt/homebrew/lib)
 find_library(LCMS2_LIBRARY lcms2 PATHS /opt/homebrew/lib)
 find_library(CRYPTO_LIBRARY crypto PATHS /opt/homebrew/lib)
+find_library(CFITSIO_LIBRARY cfitsio PATHS /opt/homebrew/lib)
 
 # Check for required libraries
 foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY)
@@ -77,21 +82,33 @@ foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY)
     endif()
 endforeach()
 
+# CFITSIO is optional but recommended for FITS support
+if(NOT CFITSIO_LIBRARY)
+    message(WARNING "CFITSIO library not found. Install with: brew install cfitsio")
+endif()
+
 # Include directories
 set(PROJECT_INCLUDE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
-# Define sources
+# Define sources - UPDATED with FITS support
 set(SOURCES
     main.cpp
     MainWindow.cpp
     SimplifiedXISFWriter.cpp
+    ImageReader.cpp
+    ImageDisplayWidget.cpp
+    ImageStatistics.cpp
+    /Users/jonathan/PCL/src/modules/file-formats/FITS/FITS.cpp
 )
 
 set(HEADERS
     MainWindow.h
     SimplifiedXISFWriter.h
+    ImageReader.h
+    ImageDisplayWidget.h
+    ImageStatistics.h
 )
 
 # Create executable
@@ -126,7 +143,12 @@ target_link_libraries(XISFTestCreator PRIVATE
     z
 )
 
-# macOS-specific frameworks
+# Add CFITSIO if available
+if(CFITSIO_LIBRARY)
+    target_link_libraries(XISFTestCreator PRIVATE ${CFITSIO_LIBRARY})
+endif()
+
+# macOS-specific frameworks (required for FITS support)
 if(APPLE)
     target_link_libraries(XISFTestCreator PRIVATE
         "-framework CoreFoundation"
@@ -144,6 +166,7 @@ target_compile_definitions(XISFTestCreator PRIVATE
 target_compile_options(XISFTestCreator PRIVATE
     -Wno-dangling-else
     -Wno-extern-c-compat
+    -Wno-asm-operand-widths
 )
 
 # Debug output
