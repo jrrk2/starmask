@@ -1,74 +1,33 @@
 #include "MainWindow.h"
-#include "SimplifiedXISFWriter.h"
-#include "ImageReader.h"
-#include "ImageDisplayWidget.h"
-#include "ImageStatistics.h"
-
-#include <QFileDialog>
-#include <QMessageBox>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QGridLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QSpinBox>
-#include <QComboBox>
-#include <QPushButton>
-#include <QProgressBar>
-#include <QTextEdit>
-#include <QPixmap>
-#include <QPainter>
-#include <QTimer>
-#include <QThread>
-#include <QApplication>
-#include <QDateTime>
-#include <QStandardPaths>
-#include <QDir>
-#include <QMenuBar>
-#include <QStatusBar>
-#include <QTabWidget>
-#include <QSplitter>
-#include <QFileInfo>
-#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
-    , m_tabWidget(nullptr)
-    , m_previewTimer(new QTimer(this))
     , m_imageReader(std::make_unique<ImageReader>())
-    , m_imageStats(std::make_unique<ImageStatistics>())
 {
     setupUI();
     setupMenuBar();
+    setupStatusBar();
     
-    // Set up preview timer (debounced updates)
-    m_previewTimer->setSingleShot(true);
-    m_previewTimer->setInterval(300); // 300ms delay
-    connect(m_previewTimer, &QTimer::timeout, this, &MainWindow::updatePreview);
-    
-    // Initial preview
-    updatePreview();
-    
-    logMessage("XISF Test Creator ready!");
+    // Initialize with no file loaded state
+    m_statusLabel->setText("Ready - No image loaded");
+    updateBackgroundMenuActions(false);
 }
 
 MainWindow::~MainWindow() = default;
 
 void MainWindow::setupUI()
 {
-    setWindowTitle("XISF Test Creator - Enhanced");
-    setMinimumSize(800, 600);
-    resize(1200, 800);
+    m_centralWidget = new QWidget;
+    setCentralWidget(m_centralWidget);
     
-    // Create main tab widget
+    m_mainLayout = new QVBoxLayout(m_centralWidget);
+    
+    // Create tab widget
     m_tabWidget = new QTabWidget;
-    setCentralWidget(m_tabWidget);
+    m_mainLayout->addWidget(m_tabWidget);
     
-    setupCreateTab();
     setupViewTab();
-    
-    // Status bar
-    statusBar()->showMessage("Ready");
+    setupBackgroundTab();
 }
 
 void MainWindow::setupMenuBar()
@@ -76,13 +35,14 @@ void MainWindow::setupMenuBar()
     // File menu
     QMenu* fileMenu = menuBar()->addMenu("&File");
     
-    QAction* openAction = fileMenu->addAction("&Open Image...");
+    QAction* openAction = fileMenu->addAction("&Open...");
     openAction->setShortcut(QKeySequence::Open);
-    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFileClicked);
+    connect(openAction, &QAction::triggered, this, &MainWindow::onOpenFile);
     
-    QAction* saveAsAction = fileMenu->addAction("Save &As...");
-    saveAsAction->setShortcut(QKeySequence::SaveAs);
-    connect(saveAsAction, &QAction::triggered, this, &MainWindow::onSaveAsClicked);
+    m_saveAsAction = fileMenu->addAction("Save &As...");
+    m_saveAsAction->setShortcut(QKeySequence::SaveAs);
+    m_saveAsAction->setEnabled(false);
+    connect(m_saveAsAction, &QAction::triggered, this, &MainWindow::onSaveAs);
     
     fileMenu->addSeparator();
     
@@ -90,528 +50,456 @@ void MainWindow::setupMenuBar()
     exitAction->setShortcut(QKeySequence::Quit);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
     
-    // View menu
-    QMenu* viewMenu = menuBar()->addMenu("&View");
-    viewMenu->addAction("&Create Tab", [this]() { m_tabWidget->setCurrentIndex(0); });
-    viewMenu->addAction("&View Tab", [this]() { m_tabWidget->setCurrentIndex(1); });
+    // Background menu
+    QMenu* backgroundMenu = menuBar()->addMenu("&Background");
+    
+    m_extractBackgroundAction = backgroundMenu->addAction("&Extract Background...");
+    m_extractBackgroundAction->setShortcut(QKeySequence("Ctrl+B"));
+    m_extractBackgroundAction->setToolTip("Extract background model from the current image");
+    m_extractBackgroundAction->setEnabled(false);
+    connect(m_extractBackgroundAction, &QAction::triggered, this, &MainWindow::onExtractBackground);
+    
+    backgroundMenu->addSeparator();
+    
+    m_showBackgroundAction = backgroundMenu->addAction("Show Background &Model");
+    m_showBackgroundAction->setShortcut(QKeySequence("Ctrl+M"));
+    m_showBackgroundAction->setEnabled(false);
+    connect(m_showBackgroundAction, &QAction::triggered, this, &MainWindow::onShowBackgroundModel);
+    
+    m_applyBackgroundAction = backgroundMenu->addAction("&Apply Background Correction");
+    m_applyBackgroundAction->setShortcut(QKeySequence("Ctrl+Shift+B"));
+    m_applyBackgroundAction->setEnabled(false);
+    connect(m_applyBackgroundAction, &QAction::triggered, this, &MainWindow::onApplyBackgroundCorrection);
+    
+    // Help menu
+    QMenu* helpMenu = menuBar()->addMenu("&Help");
+    
+    QAction* aboutAction = helpMenu->addAction("&About");
+    connect(aboutAction, &QAction::triggered, this, &MainWindow::onAbout);
 }
 
-void MainWindow::setupCreateTab()
+void MainWindow::setupStatusBar()
 {
-    m_createTab = new QWidget;
-    m_tabWidget->addTab(m_createTab, "Create XISF");
+    m_statusLabel = new QLabel("Ready");
+    statusBar()->addWidget(m_statusLabel, 1);
     
-    m_createCentralWidget = m_createTab;
-    auto* mainLayout = new QVBoxLayout(m_createCentralWidget);
-    
-    // Image Settings Group
-    m_imageGroup = new QGroupBox("Image Settings");
-    auto* imageLayout = new QGridLayout(m_imageGroup);
-    
-    // Width setting
-    imageLayout->addWidget(new QLabel("Width:"), 0, 0);
-    m_widthSpinBox = new QSpinBox;
-    m_widthSpinBox->setRange(64, 2048);
-    m_widthSpinBox->setValue(256);
-    m_widthSpinBox->setSuffix(" px");
-    connect(m_widthSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), 
-            this, &MainWindow::onImageSizeChanged);
-    imageLayout->addWidget(m_widthSpinBox, 0, 1);
-    
-    // Height setting
-    imageLayout->addWidget(new QLabel("Height:"), 1, 0);
-    m_heightSpinBox = new QSpinBox;
-    m_heightSpinBox->setRange(64, 2048);
-    m_heightSpinBox->setValue(256);
-    m_heightSpinBox->setSuffix(" px");
-    connect(m_heightSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), 
-            this, &MainWindow::onImageSizeChanged);
-    imageLayout->addWidget(m_heightSpinBox, 1, 1);
-    
-    // Compression setting
-    imageLayout->addWidget(new QLabel("Compression:"), 2, 0);
-    m_compressionCombo = new QComboBox;
-    m_compressionCombo->addItems({"None (fastest)", "ZLib (balanced)", "LZ4 (fast)", "ZSTD (best)"});
-    m_compressionCombo->setCurrentIndex(1); // ZLib default
-    imageLayout->addWidget(m_compressionCombo, 2, 1);
-    
-    // Preview
-    imageLayout->addWidget(new QLabel("Preview:"), 3, 0);
-    m_previewLabel = new QLabel;
-    m_previewLabel->setFixedSize(128, 128);
-    m_previewLabel->setStyleSheet("border: 1px solid gray;");
-    m_previewLabel->setAlignment(Qt::AlignCenter);
-    imageLayout->addWidget(m_previewLabel, 3, 1);
-    
-    mainLayout->addWidget(m_imageGroup);
-    
-    // Action Group
-    m_actionGroup = new QGroupBox("Actions");
-    auto* actionLayout = new QVBoxLayout(m_actionGroup);
-    
-    m_createButton = new QPushButton("Create XISF File...");
-    m_createButton->setMinimumHeight(40);
-    connect(m_createButton, &QPushButton::clicked, this, &MainWindow::onCreateXISFClicked);
-    actionLayout->addWidget(m_createButton);
-    
-    m_progressBar = new QProgressBar;
-    m_progressBar->setVisible(false);
-    actionLayout->addWidget(m_progressBar);
-    
-    mainLayout->addWidget(m_actionGroup);
-    
-    // Log Group
-    m_logGroup = new QGroupBox("Log");
-    auto* logLayout = new QVBoxLayout(m_logGroup);
-    
-    m_logTextEdit = new QTextEdit;
-    m_logTextEdit->setMaximumHeight(150);
-    m_logTextEdit->setReadOnly(true);
-    logLayout->addWidget(m_logTextEdit);
-    
-    mainLayout->addWidget(m_logGroup);
-    
-    // Set stretch factors
-    mainLayout->setStretchFactor(m_imageGroup, 1);
-    mainLayout->setStretchFactor(m_actionGroup, 0);
-    mainLayout->setStretchFactor(m_logGroup, 0);
+    m_statusProgress = new QProgressBar;
+    m_statusProgress->setVisible(false);
+    m_statusProgress->setMaximumWidth(200);
+    statusBar()->addPermanentWidget(m_statusProgress);
 }
 
 void MainWindow::setupViewTab()
 {
     m_viewTab = new QWidget;
-    m_tabWidget->addTab(m_viewTab, "View Images");
+    m_tabWidget->addTab(m_viewTab, "View");
     
-    auto* viewLayout = new QVBoxLayout(m_viewTab);
+    auto* viewLayout = new QHBoxLayout(m_viewTab);
     
-    // File operations toolbar
-    auto* fileToolbar = new QWidget;
-    auto* fileLayout = new QHBoxLayout(fileToolbar);
-    fileLayout->setContentsMargins(5,5,5,5);
-    
-    m_openButton = new QPushButton("Open Image...");
-    m_openButton->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
-    connect(m_openButton, &QPushButton::clicked, this, &MainWindow::onOpenFileClicked);
-    fileLayout->addWidget(m_openButton);
-    
-    m_saveAsButton = new QPushButton("Save As...");
-    m_saveAsButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
-    m_saveAsButton->setEnabled(false);
-    connect(m_saveAsButton, &QPushButton::clicked, this, &MainWindow::onSaveAsClicked);
-    fileLayout->addWidget(m_saveAsButton);
-    
-    fileLayout->addStretch();
-    
-    m_statusLabel = new QLabel("No image loaded");
-    fileLayout->addWidget(m_statusLabel);
-    
-    viewLayout->addWidget(fileToolbar);
-    
-    // Main splitter
+    // Create splitter for image display and info panel
     m_viewSplitter = new QSplitter(Qt::Horizontal);
-    viewLayout->addWidget(m_viewSplitter, 1);
+    viewLayout->addWidget(m_viewSplitter);
     
-    // Image display
+    // Image display widget
     m_imageDisplay = new ImageDisplayWidget;
-    connect(m_imageDisplay, &ImageDisplayWidget::imageClicked, 
-            this, &MainWindow::onImageClicked);
-    connect(m_imageDisplay, &ImageDisplayWidget::zoomChanged,
-            this, &MainWindow::onZoomChanged);
     m_viewSplitter->addWidget(m_imageDisplay);
     
     // Info panel
-    setupInfoPanel();
-    
-    // Set splitter proportions
-    m_viewSplitter->setStretchFactor(0, 3); // Image display gets more space
-    m_viewSplitter->setStretchFactor(1, 1); // Info panel gets less space
-    m_viewSplitter->setSizes({800, 300});
-}
-
-void MainWindow::setupInfoPanel()
-{
-    m_infoPanel = new QWidget;
-    m_infoPanel->setMinimumWidth(250);
-    m_infoPanel->setMaximumWidth(400);
-    
-    auto* infoPanelLayout = new QVBoxLayout(m_infoPanel);
-    
-    // File info
-    m_fileInfoGroup = new QGroupBox("File Information");
-    auto* fileInfoLayout = new QVBoxLayout(m_fileInfoGroup);
-    m_fileInfoText = new QTextEdit;
-    m_fileInfoText->setMaximumHeight(80);
-    m_fileInfoText->setReadOnly(true);
-    fileInfoLayout->addWidget(m_fileInfoText);
-    infoPanelLayout->addWidget(m_fileInfoGroup);
+    auto* infoWidget = new QWidget;
+    auto* infoLayout = new QVBoxLayout(infoWidget);
     
     // Image info
-    m_imageInfoGroup = new QGroupBox("Image Information");
-    auto* imageInfoLayout = new QVBoxLayout(m_imageInfoGroup);
-    m_imageInfoText = new QTextEdit;
-    m_imageInfoText->setMaximumHeight(100);
-    m_imageInfoText->setReadOnly(true);
-    imageInfoLayout->addWidget(m_imageInfoText);
-    infoPanelLayout->addWidget(m_imageInfoGroup);
+    m_infoGroup = new QGroupBox("Image Information");
+    auto* infoGroupLayout = new QVBoxLayout(m_infoGroup);
     
-    // Statistics
-    m_statisticsGroup = new QGroupBox("Image Statistics");
-    auto* statisticsLayout = new QVBoxLayout(m_statisticsGroup);
-    m_statisticsText = new QTextEdit;
-    m_statisticsText->setMaximumHeight(120);
-    m_statisticsText->setReadOnly(true);
-    statisticsLayout->addWidget(m_statisticsText);
-    infoPanelLayout->addWidget(m_statisticsGroup);
+    m_infoText = new QTextEdit;
+    m_infoText->setMaximumHeight(150);
+    m_infoText->setReadOnly(true);
+    m_infoText->setPlainText("No image loaded");
+    infoGroupLayout->addWidget(m_infoText);
     
-    // Pixel info
-    m_pixelInfoGroup = new QGroupBox("Pixel Information");
-    auto* pixelInfoLayout = new QVBoxLayout(m_pixelInfoGroup);
-    m_pixelInfoText = new QTextEdit;
-    m_pixelInfoText->setMaximumHeight(60);
-    m_pixelInfoText->setReadOnly(true);
-    pixelInfoLayout->addWidget(m_pixelInfoText);
-    infoPanelLayout->addWidget(m_pixelInfoGroup);
+    infoLayout->addWidget(m_infoGroup);
     
-    // Metadata
-    m_metadataGroup = new QGroupBox("Metadata");
-    auto* metadataLayout = new QVBoxLayout(m_metadataGroup);
-    m_metadataText = new QTextEdit;
-    m_metadataText->setReadOnly(true);
-    metadataLayout->addWidget(m_metadataText);
-    infoPanelLayout->addWidget(m_metadataGroup);
+    // Log panel
+    auto* logGroup = new QGroupBox("Log");
+    auto* logLayout = new QVBoxLayout(logGroup);
     
-    // Set stretch factors so metadata gets most space
-    infoPanelLayout->setStretchFactor(m_fileInfoGroup, 0);
-    infoPanelLayout->setStretchFactor(m_imageInfoGroup, 0);
-    infoPanelLayout->setStretchFactor(m_statisticsGroup, 0);
-    infoPanelLayout->setStretchFactor(m_pixelInfoGroup, 0);
-    infoPanelLayout->setStretchFactor(m_metadataGroup, 1);
+    m_logText = new QTextEdit;
+    m_logText->setReadOnly(true);
+    m_logText->setMaximumHeight(200);
+    logLayout->addWidget(m_logText);
     
-    m_viewSplitter->addWidget(m_infoPanel);
+    infoLayout->addWidget(logGroup);
+    infoLayout->addStretch();
+    
+    m_viewSplitter->addWidget(infoWidget);
+    
+    // Set splitter proportions (image display gets more space)
+    m_viewSplitter->setStretchFactor(0, 3);
+    m_viewSplitter->setStretchFactor(1, 1);
 }
 
-void MainWindow::onOpenFileClicked()
+void MainWindow::setupBackgroundTab()
 {
-    QString filter = ImageReader::formatFilter();
+    m_backgroundTab = new QWidget;
+    m_tabWidget->addTab(m_backgroundTab, "Background");
+    
+    auto* backgroundLayout = new QVBoxLayout(m_backgroundTab);
+    
+    // Create background extraction widget
+    m_backgroundWidget = new BackgroundExtractionWidget;
+    
+    // Connect background extraction signals
+    connect(m_backgroundWidget, &BackgroundExtractionWidget::backgroundExtracted,
+            this, &MainWindow::onBackgroundExtracted);
+    connect(m_backgroundWidget, &BackgroundExtractionWidget::backgroundModelChanged,
+            this, &MainWindow::onBackgroundModelChanged);
+    connect(m_backgroundWidget, &BackgroundExtractionWidget::correctedImageReady,
+            this, &MainWindow::onCorrectedImageReady);
+    
+    // Connect image clicks for manual sampling
+    connect(m_imageDisplay, &ImageDisplayWidget::imageClicked,
+            m_backgroundWidget, &BackgroundExtractionWidget::onImageClicked);
+    
+    backgroundLayout->addWidget(m_backgroundWidget);
+}
+
+void MainWindow::onOpenFile()
+{
     QString fileName = QFileDialog::getOpenFileName(
         this,
         "Open Image File",
-        m_currentFilePath.isEmpty() ? 
-            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) : 
-            QFileInfo(m_currentFilePath).absolutePath(),
-        filter
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        ImageReader::formatFilter()
     );
     
     if (!fileName.isEmpty()) {
         loadImageFile(fileName);
-        // Switch to view tab
-        m_tabWidget->setCurrentIndex(1);
     }
 }
 
-void MainWindow::onSaveAsClicked()
+void MainWindow::onSaveAs()
 {
     if (!m_imageReader->hasImage()) {
-        QMessageBox::information(this, "No Image", "No image is currently loaded to save.");
+        QMessageBox::information(this, "No Image", "No image to save.");
         return;
     }
     
-    // For now, just show info about the current image
-    // In a full implementation, you would implement saving in various formats
-    QMessageBox::information(this, "Save As", 
-        "Save functionality would be implemented here.\n"
-        "Current image could be saved as XISF, FITS, or other formats.");
+    QString fileName = QFileDialog::getSaveFileName(
+        this,
+        "Save Image As",
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/output.xisf",
+        "XISF Files (*.xisf);;All Files (*)"
+    );
+    
+    if (!fileName.isEmpty()) {
+        // Implementation would save the current image
+        logMessage("Save functionality not yet implemented");
+    }
+}
+
+void MainWindow::onAbout()
+{
+    QMessageBox::about(this, "About XISF Test Creator",
+        "XISF Test Creator v1.0\n\n"
+        "A tool for reading, processing, and writing XISF image files.\n"
+        "Built with Qt and PCL integration.");
 }
 
 void MainWindow::loadImageFile(const QString& filePath)
 {
-    statusBar()->showMessage("Loading image...");
-    QApplication::processEvents();
-    
-    m_imageReader->clear();
-    
     if (m_imageReader->readFile(filePath)) {
-        m_currentFilePath = filePath;
         const ImageData& imageData = m_imageReader->imageData();
         
-        // Update displays
+        // Update image display
         m_imageDisplay->setImageData(imageData);
+        
+        // Pass image data to background extraction widget
+        if (m_backgroundWidget) {
+            m_backgroundWidget->setImageData(imageData);
+        }
+        
+        // Update UI state
+        m_currentFilePath = filePath;
         updateImageInfo();
-        updateImageStatistics();
         
-        m_saveAsButton->setEnabled(true);
+        // Enable menu actions
+        m_saveAsAction->setEnabled(true);
+        m_extractBackgroundAction->setEnabled(true);
         
-        QString message = QString("Loaded: %1 (%2×%3×%4)")
-                         .arg(QFileInfo(filePath).fileName())
-                         .arg(imageData.width)
-                         .arg(imageData.height) 
-                         .arg(imageData.channels);
-        statusBar()->showMessage(message);
-        m_statusLabel->setText(message);
-        
-        logMessage(QString("✓ Successfully loaded: %1").arg(QFileInfo(filePath).fileName()));
-        
+        logMessage(QString("✓ Loaded image: %1").arg(QFileInfo(filePath).fileName()));
+        m_statusLabel->setText(QString("Image loaded: %1×%2×%3")
+                              .arg(imageData.width)
+                              .arg(imageData.height)
+                              .arg(imageData.channels));
     } else {
-        QString error = QString("Failed to load image: %1").arg(m_imageReader->lastError());
-        statusBar()->showMessage("Failed to load image");
-        m_statusLabel->setText("Load failed");
+        // Clear displays
+        m_imageDisplay->clearImage();
+        if (m_backgroundWidget) {
+            m_backgroundWidget->clearImage();
+        }
         
-        QMessageBox::critical(this, "Load Error", error);
-        logMessage(QString("✗ %1").arg(error));
+        // Show error
+        QString error = m_imageReader->lastError();
+        QMessageBox::critical(this, "Error Loading Image", 
+                             QString("Failed to load image:\n%1").arg(error));
+        
+        logMessage(QString("✗ Failed to load image: %1").arg(error));
+        
+        // Disable menu actions
+        m_saveAsAction->setEnabled(false);
+        updateBackgroundMenuActions(false);
+        
+        m_statusLabel->setText("Ready - No image loaded");
     }
 }
 
 void MainWindow::updateImageInfo()
 {
     if (!m_imageReader->hasImage()) {
-        m_fileInfoText->clear();
-        m_imageInfoText->clear();
-        m_metadataText->clear();
+        m_infoText->setPlainText("No image loaded");
         return;
     }
     
     const ImageData& imageData = m_imageReader->imageData();
     
-    // File information
-    QFileInfo fileInfo(m_currentFilePath);
-    QString fileInfoStr = QString(
-        "Name: %1\n"
-        "Size: %2 bytes\n"
-        "Modified: %3"
-    ).arg(fileInfo.fileName())
-     .arg(fileInfo.size())
-     .arg(fileInfo.lastModified().toString());
-    m_fileInfoText->setPlainText(fileInfoStr);
+    QString info;
+    info += QString("File: %1\n").arg(QFileInfo(m_currentFilePath).fileName());
+    info += QString("Dimensions: %1 × %2 × %3\n").arg(imageData.width).arg(imageData.height).arg(imageData.channels);
+    info += QString("Format: %1\n").arg(imageData.format);
+    info += QString("Color Space: %1\n").arg(imageData.colorSpace);
+    info += QString("Pixels: %1\n").arg(imageData.pixels.size());
     
-    // Image information
-    QString imageInfoStr = QString(
-        "Dimensions: %1 × %2\n"
-        "Channels: %3\n"
-        "Color Space: %4\n"
-        "Format: %5\n"
-        "Total Pixels: %6"
-    ).arg(imageData.width)
-     .arg(imageData.height)
-     .arg(imageData.channels)
-     .arg(imageData.colorSpace)
-     .arg(imageData.format)
-     .arg(imageData.width * imageData.height);
-    m_imageInfoText->setPlainText(imageInfoStr);
-    
-    // Metadata
-    m_metadataText->setPlainText(imageData.metadata.join("\n"));
-}
-
-void MainWindow::updateImageStatistics()
-{
-    if (!m_imageReader->hasImage()) {
-        m_statisticsText->clear();
-        return;
-    }
-    
-    const ImageData& imageData = m_imageReader->imageData();
-    
-    m_imageStats->calculate(imageData.pixels.constData(), imageData.pixels.size());
-    m_statisticsText->setPlainText(m_imageStats->toDetailedString());
-}
-
-void MainWindow::onImageClicked(int x, int y, float value)
-{
-    if (!m_imageReader->hasImage()) {
-        return;
-    }
-    
-    const ImageData& imageData = m_imageReader->imageData();
-    
-    QString pixelInfo;
-    if (imageData.channels == 1) {
-        pixelInfo = QString("Position: (%1, %2)\nValue: %3")
-                   .arg(x).arg(y).arg(value, 0, 'g', 6);
-    } else {
-        // For multi-channel images, show values for all channels at this pixel
-        int pixelIndex = y * imageData.width + x;
-        QStringList channelValues;
-        
-        for (int c = 0; c < imageData.channels; ++c) {
-            int channelPixelIndex = pixelIndex + c * imageData.width * imageData.height;
-            if (channelPixelIndex < imageData.pixels.size()) {
-                float channelValue = imageData.pixels[channelPixelIndex];
-                channelValues.append(QString("Ch%1: %2").arg(c).arg(channelValue, 0, 'g', 6));
-            }
-        }
-        
-        pixelInfo = QString("Position: (%1, %2)\n%3")
-                   .arg(x).arg(y).arg(channelValues.join("\n"));
-    }
-    
-    m_pixelInfoText->setPlainText(pixelInfo);
-}
-
-void MainWindow::onZoomChanged(double factor)
-{
-    statusBar()->showMessage(QString("Zoom: %1%").arg(static_cast<int>(factor * 100)), 2000);
-}
-
-void MainWindow::onImageSizeChanged()
-{
-    // Restart the timer for debounced preview updates
-    m_previewTimer->start();
-}
-
-void MainWindow::updatePreview()
-{
-    int width = m_widthSpinBox->value();
-    int height = m_heightSpinBox->value();
-    
-    // Create a small preview version (max 128x128)
-    int previewSize = 128;
-    int previewWidth = qMin(width, previewSize);
-    int previewHeight = qMin(height, previewSize);
-    
-    QPixmap preview(previewWidth, previewHeight);
-    preview.fill(Qt::black);
-    
-    QPainter painter(&preview);
-    
-    // Create the same test pattern as the original code
-    for (int y = 0; y < previewHeight; ++y) {
-        for (int x = 0; x < previewWidth; ++x) {
-            // Scale coordinates to match the full image
-            int fullX = (x * width) / previewWidth;
-            int fullY = (y * height) / previewHeight;
-            
-            float value = float(fullX ^ fullY) / 255.0f;
-            int grayValue = qBound(0, int(value * 255), 255);
-            
-            painter.setPen(QColor(grayValue, grayValue, grayValue));
-            painter.drawPoint(x, y);
+    if (!imageData.metadata.isEmpty()) {
+        info += "\nMetadata:\n";
+        for (const QString& meta : imageData.metadata) {
+            info += QString("  %1\n").arg(meta);
         }
     }
     
-    m_previewLabel->setPixmap(preview);
-    
-    // Update the status
-    QString sizeText = QString("%1 × %2 pixels").arg(width).arg(height);
-    m_previewLabel->setToolTip(sizeText);
-}
-
-void MainWindow::onCreateXISFClicked()
-{
-    // Get save location
-    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    QString fileName = QFileDialog::getSaveFileName(
-        this,
-        "Save XISF File",
-        QDir(defaultPath).filePath("test_pattern.xisf"),
-        "XISF Files (*.xisf);;All Files (*)"
-    );
-    
-    if (fileName.isEmpty()) {
-        return; // User cancelled
-    }
-    
-    // Disable UI during creation
-    m_createButton->setEnabled(false);
-    m_progressBar->setVisible(true);
-    m_progressBar->setRange(0, 0); // Indeterminate
-    
-    logMessage(QString("Creating XISF file: %1").arg(QFileInfo(fileName).fileName()));
-    
-    QApplication::processEvents(); // Update UI
-    
-    try {
-        int width = m_widthSpinBox->value();
-        int height = m_heightSpinBox->value();
-        
-        logMessage(QString("Generating %1×%2 test pattern...").arg(width).arg(height));
-        
-        // Create test image data
-        QVector<float> pixels(width * height);
-        createTestImage(pixels.data(), width, height);
-        
-        logMessage("Creating XISF writer...");
-        
-        // Convert compression combo selection to enum
-        CompressionType compression;
-        switch (m_compressionCombo->currentIndex()) {
-            case 0: compression = CompressionType::None; break;
-            case 1: compression = CompressionType::ZLib; break;
-            case 2: compression = CompressionType::LZ4; break;
-            case 3: compression = CompressionType::ZSTD; break;
-            default: compression = CompressionType::ZLib; break;
-        }
-        
-        SimplifiedXISFWriter writer(fileName, compression);
-        writer.setCreatorApplication("XISF Test Creator - Enhanced");
-        writer.setVerbosity(0); // Quiet mode for GUI
-        
-        // Add some metadata
-        writer.addProperty("TestPattern", "String", "XOR Pattern", "Type of test pattern");
-        writer.addProperty("ImageDimensions", "String", QString("%1×%2").arg(width).arg(height), "Image size");
-        writer.addProperty("Compression", "String", getCompressionName(m_compressionCombo->currentIndex()), "Compression method");
-        writer.addProperty("CreationTime", "String", QDateTime::currentDateTimeUtc().toString(Qt::ISODate), "File creation time");
-        
-        logMessage("Adding image data...");
-        
-        if (!writer.addImage("test_pattern", pixels.data(), width, height, 1)) {
-            throw std::runtime_error(writer.lastError().toStdString());
-        }
-        
-        logMessage("Writing XISF file...");
-        
-        if (!writer.write()) {
-            throw std::runtime_error(writer.lastError().toStdString());
-        }
-        
-        logMessage("✓ XISF file created successfully!");
-        
-        QMessageBox::information(this, "Success", 
-            QString("XISF file created successfully!\n\nFile: %1\nSize: %2×%3 pixels\nCompression: %4")
-            .arg(QFileInfo(fileName).fileName())
-            .arg(width).arg(height)
-            .arg(getCompressionName(m_compressionCombo->currentIndex())));
-        
-    } catch (const std::exception& e) {
-        QString errorMsg = QString("Error creating XISF file: %1").arg(e.what());
-        logMessage("✗ " + errorMsg);
-        QMessageBox::critical(this, "Error", errorMsg);
-    }
-    
-    // Re-enable UI
-    m_createButton->setEnabled(true);
-    m_progressBar->setVisible(false);
-}
-
-void MainWindow::createTestImage(float* pixels, int width, int height)
-{
-    // Create the same XOR pattern as the original code
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            pixels[y * width + x] = float(x ^ y) / 255.0f;
-        }
-    }
-}
-
-QString MainWindow::getCompressionName(int index)
-{
-    switch (index) {
-        case 0: return "None";
-        case 1: return "ZLib";
-        case 2: return "LZ4";
-        case 3: return "ZSTD";
-        default: return "Unknown";
-    }
+    m_infoText->setPlainText(info);
 }
 
 void MainWindow::logMessage(const QString& message)
 {
-    QString timestamp = QDateTime::currentDateTime().toString("hh:mm:ss");
-    m_logTextEdit->append(QString("[%1] %2").arg(timestamp, message));
+    QString timestamp = QTime::currentTime().toString("hh:mm:ss");
+    m_logText->append(QString("[%1] %2").arg(timestamp, message));
+}
+
+void MainWindow::onBackgroundExtracted(const BackgroundExtractionResult& result)
+{
+    if (result.success) {
+        logMessage(QString("✓ Background extraction completed: %1 samples used, RMS error: %2")
+                  .arg(result.samplesUsed)
+                  .arg(result.rmsError, 0, 'f', 6));
+        
+        // Switch to results tab to show statistics
+        if (m_backgroundWidget) {
+            // The background widget will handle displaying results
+        }
+        
+        // Enable background-related menu actions
+        updateBackgroundMenuActions(true);
+        
+    } else {
+        logMessage(QString("✗ Background extraction failed: %1").arg(result.errorMessage));
+        updateBackgroundMenuActions(false);
+    }
+}
+
+void MainWindow::onBackgroundModelChanged(const QVector<float>& backgroundData, int width, int height, int channels)
+{
+    // Store background model for potential display
+    logMessage(QString("Background model ready: %1×%2×%3").arg(width).arg(height).arg(channels));
+}
+
+void MainWindow::onCorrectedImageReady(const QVector<float>& correctedData, int width, int height, int channels)
+{
+    // Create corrected image data structure
+    ImageData correctedImageData;
+    correctedImageData.width = width;
+    correctedImageData.height = height;
+    correctedImageData.channels = channels;
+    correctedImageData.pixels = correctedData;
+    correctedImageData.format = "Background Corrected";
+    correctedImageData.colorSpace = (channels == 1) ? "Grayscale" : "RGB";
     
-    // Auto-scroll to bottom
-    QTextCursor cursor = m_logTextEdit->textCursor();
-    cursor.movePosition(QTextCursor::End);
-    m_logTextEdit->setTextCursor(cursor);
+    // Update the main image display with corrected data
+    m_imageDisplay->setImageData(correctedImageData);
     
-    QApplication::processEvents(); // Update UI immediately
+    logMessage(QString("✓ Background correction applied to image display"));
+}
+
+void MainWindow::onExtractBackground()
+{
+    if (!m_imageReader->hasImage()) {
+        QMessageBox::information(this, "No Image", "Please load an image first.");
+        return;
+    }
+    
+    // Switch to background extraction tab
+    if (m_tabWidget && m_backgroundTab) {
+        int backgroundTabIndex = m_tabWidget->indexOf(m_backgroundTab);
+        if (backgroundTabIndex >= 0) {
+            m_tabWidget->setCurrentIndex(backgroundTabIndex);
+        }
+    }
+    
+    logMessage("Switched to background extraction tab");
+}
+
+void MainWindow::onShowBackgroundModel()
+{
+    if (!m_backgroundWidget || !m_backgroundWidget->hasResult()) {
+        QMessageBox::information(this, "No Background Model", 
+            "Please extract a background model first.");
+        return;
+    }
+    
+    const BackgroundExtractionResult& result = m_backgroundWidget->result();
+    
+    if (!result.backgroundData.isEmpty() && m_imageReader->hasImage()) {
+        const ImageData& originalImage = m_imageReader->imageData();
+        createBackgroundImageWindow(result.backgroundData, 
+                                   originalImage.width, 
+                                   originalImage.height, 
+                                   originalImage.channels);
+    }
+}
+
+void MainWindow::onApplyBackgroundCorrection()
+{
+    if (!m_backgroundWidget || !m_backgroundWidget->hasResult()) {
+        QMessageBox::information(this, "No Background Correction", 
+            "Please extract a background model first.");
+        return;
+    }
+    
+    const BackgroundExtractionResult& result = m_backgroundWidget->result();
+    
+    if (!result.correctedData.isEmpty() && m_imageReader->hasImage()) {
+        const ImageData& originalImage = m_imageReader->imageData();
+        
+        // Ask user if they want to replace the current image or create a new window
+        QMessageBox::StandardButton reply = QMessageBox::question(this, 
+            "Apply Background Correction",
+            "Do you want to replace the current image with the background-corrected version?\n\n"
+            "Choose 'Yes' to replace current image, 'No' to create a new window, or 'Cancel' to abort.",
+            QMessageBox::Yes | QMessageBox::No | QMessageBox::Cancel);
+        
+        if (reply == QMessageBox::Yes) {
+            // Replace current image
+            onCorrectedImageReady(result.correctedData, 
+                                 originalImage.width, 
+                                 originalImage.height, 
+                                 originalImage.channels);
+        } else if (reply == QMessageBox::No) {
+            // Create new window
+            createCorrectedImageWindow(result.correctedData,
+                                     originalImage.width,
+                                     originalImage.height,
+                                     originalImage.channels);
+        }
+        // Cancel does nothing
+    }
+}
+
+void MainWindow::updateBackgroundMenuActions(bool hasResult)
+{
+    m_showBackgroundAction->setEnabled(hasResult);
+    m_applyBackgroundAction->setEnabled(hasResult);
+    
+    logMessage(hasResult ? "Background extraction menu actions enabled" 
+                        : "Background extraction menu actions disabled");
+}
+
+void MainWindow::createBackgroundImageWindow(const QVector<float>& backgroundData, int width, int height, int channels)
+{
+    // Create a new image data structure for the background model
+    ImageData backgroundImageData;
+    backgroundImageData.width = width;
+    backgroundImageData.height = height;
+    backgroundImageData.channels = channels;
+    backgroundImageData.pixels = backgroundData;
+    backgroundImageData.format = "Background Model";
+    backgroundImageData.colorSpace = (channels == 1) ? "Grayscale" : "RGB";
+    backgroundImageData.metadata.append("Type: Extracted Background Model");
+    backgroundImageData.metadata.append(QString("Original Image: %1")
+                                       .arg(QFileInfo(m_currentFilePath).fileName()));
+    
+    // For now, just log that we would create a window
+    // In a full implementation, you might create a new MainWindow instance
+    // or a dedicated background model viewer window
+    logMessage("Background model window would be created here");
+    
+    // Alternative: Update current display temporarily
+    QString currentStatus = m_statusLabel->text();
+    m_imageDisplay->setImageData(backgroundImageData);
+    m_statusLabel->setText("Displaying background model - " + currentStatus);
+    
+    // You could add a timer to revert to original image after a few seconds
+    QTimer::singleShot(3000, [this]() {
+        if (m_imageReader->hasImage()) {
+            m_imageDisplay->setImageData(m_imageReader->imageData());
+            updateImageInfo();
+        }
+    });
+}
+
+void MainWindow::createCorrectedImageWindow(const QVector<float>& correctedData, int width, int height, int channels)
+{
+    // Create a new image data structure for the corrected image
+    ImageData correctedImageData;
+    correctedImageData.width = width;
+    correctedImageData.height = height;
+    correctedImageData.channels = channels;
+    correctedImageData.pixels = correctedData;
+    correctedImageData.format = "Background Corrected";
+    correctedImageData.colorSpace = (channels == 1) ? "Grayscale" : "RGB";
+    correctedImageData.metadata.append("Type: Background Corrected Image");
+    correctedImageData.metadata.append(QString("Original Image: %1")
+                                      .arg(QFileInfo(m_currentFilePath).fileName()));
+    
+    // For now, create a simple dialog to show the corrected image
+    QDialog* correctedDialog = new QDialog(this, Qt::Window);
+    correctedDialog->setWindowTitle("Background Corrected Image");
+    correctedDialog->resize(800, 600);
+    
+    auto* layout = new QVBoxLayout(correctedDialog);
+    
+    // Create a simplified image display widget for the dialog
+    auto* correctedDisplay = new ImageDisplayWidget;
+    correctedDisplay->setImageData(correctedImageData);
+    layout->addWidget(correctedDisplay);
+    
+    auto* buttonLayout = new QHBoxLayout;
+    auto* saveButton = new QPushButton("Save As...");
+    auto* closeButton = new QPushButton("Close");
+    
+    connect(saveButton, &QPushButton::clicked, [this, correctedImageData]() {
+        // Implement save functionality for corrected image
+        QString fileName = QFileDialog::getSaveFileName(
+            this,
+            "Save Background Corrected Image",
+            QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/corrected_image.xisf",
+            "XISF Files (*.xisf);;All Files (*)"
+        );
+        
+        if (!fileName.isEmpty()) {
+            // Here you would use SimplifiedXISFWriter to save the corrected image
+            logMessage("Corrected image would be saved to: " + fileName);
+        }
+    });
+    
+    connect(closeButton, &QPushButton::clicked, correctedDialog, &QDialog::accept);
+    
+    buttonLayout->addWidget(saveButton);
+    buttonLayout->addStretch();
+    buttonLayout->addWidget(closeButton);
+    
+    layout->addLayout(buttonLayout);
+    
+    correctedDialog->show();
+    
+    logMessage("✓ Created background corrected image window");
 }

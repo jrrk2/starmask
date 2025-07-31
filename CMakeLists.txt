@@ -123,6 +123,8 @@ set(SOURCES
     ImageReader.cpp
     ImageDisplayWidget.cpp
     ImageStatistics.cpp
+    BackgroundExtractor.cpp                    # NEW
+    BackgroundExtractionWidget.cpp             # NEW
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
 )
 
@@ -134,6 +136,8 @@ set(HEADERS
     ImageStatistics.h
     PCLMockAPI.h
     PCLThreadMock.h
+    BackgroundExtractor.h                      # NEW
+    BackgroundExtractionWidget.h               # NEW
 )
 
 # Create executable

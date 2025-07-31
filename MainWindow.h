@@ -2,26 +2,32 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QLabel>
-#include <QPushButton>
-#include <QProgressBar>
-#include <QTextEdit>
-#include <QSpinBox>
-#include <QComboBox>
-#include <QGridLayout>
+#include <QTabWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QGroupBox>
-#include <QTimer>
-#include <QTabWidget>
+#include <QLabel>
+#include <QTextEdit>
+#include <QMenuBar>
+#include <QStatusBar>
+#include <QProgressBar>
 #include <QSplitter>
+#include <QGroupBox>
+#include <QScrollArea>
+#include <QFileDialog>
+#include <QMessageBox>
+#include <QTimer>
+#include <QTime>
+#include <QStandardPaths>
+#include <QFileInfo>
+#include <QDialog>
+#include <QPushButton>
 #include <memory>
 
-// Forward declarations
-class ImageReader;
-class ImageDisplayWidget;
-class ImageStatistics;
-struct ImageData;
+#include "ImageReader.h"
+#include "ImageDisplayWidget.h"
+#include "SimplifiedXISFWriter.h"
+#include "BackgroundExtractionWidget.h"
+#include "BackgroundExtractor.h"
 
 class MainWindow : public QMainWindow
 {
@@ -32,79 +38,66 @@ public:
     ~MainWindow();
 
 private slots:
-    // File operations
-    void onOpenFileClicked();
-    void onSaveAsClicked();
+    void onOpenFile();
+    void onSaveAs();
+    void onAbout();
+
+    // Background extraction slots
+    void onBackgroundExtracted(const BackgroundExtractionResult& result);
+    void onBackgroundModelChanged(const QVector<float>& backgroundData, int width, int height, int channels);
+    void onCorrectedImageReady(const QVector<float>& correctedData, int width, int height, int channels);
     
-    // Creation operations
-    void onCreateXISFClicked();
-    void onImageSizeChanged();
-    void updatePreview();
-    
-    // Image display
-    void onImageClicked(int x, int y, float value);
-    void onZoomChanged(double factor);
+    // Background extraction menu actions
+    void onExtractBackground();
+    void onShowBackgroundModel();
+    void onApplyBackgroundCorrection();
 
 private:
     void setupUI();
     void setupMenuBar();
-    void setupCreateTab();
+    void setupStatusBar();
     void setupViewTab();
+    void setupBackgroundTab();
     
-    // File operations
     void loadImageFile(const QString& filePath);
     void updateImageInfo();
-    void updateImageStatistics();
-    void setupInfoPanel();
-    
-    // Image creation
-    void createTestImage(float* pixels, int width, int height);
-    QString getCompressionName(int index);
     void logMessage(const QString& message);
     
-    // UI components - Main layout
+    // Background extraction helper functions
+    void updateBackgroundMenuActions(bool hasResult);
+    void createBackgroundImageWindow(const QVector<float>& backgroundData, int width, int height, int channels);
+    void createCorrectedImageWindow(const QVector<float>& correctedData, int width, int height, int channels);
+    
+    // UI Components
+    QWidget* m_centralWidget;
+    QVBoxLayout* m_mainLayout;
     QTabWidget* m_tabWidget;
-    QWidget* m_createTab;
+    
+    // View tab
     QWidget* m_viewTab;
-    
-    // Create tab components
-    QWidget* m_createCentralWidget;
-    QGroupBox* m_imageGroup;
-    QSpinBox* m_widthSpinBox;
-    QSpinBox* m_heightSpinBox;
-    QComboBox* m_compressionCombo;
-    QLabel* m_previewLabel;
-    QGroupBox* m_actionGroup;
-    QPushButton* m_createButton;
-    QProgressBar* m_progressBar;
-    QGroupBox* m_logGroup;
-    QTextEdit* m_logTextEdit;
-    QTimer* m_previewTimer;
-    
-    // View tab components
     QSplitter* m_viewSplitter;
     ImageDisplayWidget* m_imageDisplay;
-    QWidget* m_infoPanel;
-    QGroupBox* m_fileInfoGroup;
-    QTextEdit* m_fileInfoText;
-    QGroupBox* m_imageInfoGroup;
-    QTextEdit* m_imageInfoText;
-    QGroupBox* m_statisticsGroup;
-    QTextEdit* m_statisticsText;
-    QGroupBox* m_pixelInfoGroup;
-    QTextEdit* m_pixelInfoText;
-    QGroupBox* m_metadataGroup;
-    QTextEdit* m_metadataText;
+    QGroupBox* m_infoGroup;
+    QTextEdit* m_infoText;
+    QTextEdit* m_logText;
     
-    // File operations
-    QPushButton* m_openButton;
-    QPushButton* m_saveAsButton;
+    // Background tab
+    QWidget* m_backgroundTab;
+    BackgroundExtractionWidget* m_backgroundWidget;
+    
+    // Status bar
     QLabel* m_statusLabel;
+    QProgressBar* m_statusProgress;
     
     // Data
     std::unique_ptr<ImageReader> m_imageReader;
-    std::unique_ptr<ImageStatistics> m_imageStats;
     QString m_currentFilePath;
+    
+    // Menu actions (for enabling/disabling)
+    QAction* m_saveAsAction;
+    QAction* m_extractBackgroundAction;
+    QAction* m_showBackgroundAction;
+    QAction* m_applyBackgroundAction;
 };
 
 #endif // MAINWINDOW_H
