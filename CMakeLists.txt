@@ -160,11 +160,12 @@ find_library(ZSTD_LIBRARY zstd PATHS /opt/homebrew/lib)
 find_library(LCMS2_LIBRARY lcms2 PATHS /opt/homebrew/lib)
 find_library(CRYPTO_LIBRARY crypto PATHS /opt/homebrew/lib)
 find_library(CFITSIO_LIBRARY cfitsio PATHS /opt/homebrew/lib)
+find_library(TIFF_LIBRARY NAMES tiff PATHS /opt/homebrew/lib)
 
 # Check for required libraries
-foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY)
+foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY TIFF_LIBRARY)
     if(NOT ${lib})
-        message(FATAL_ERROR "${lib} not found. Install with: brew install lz4 zstd little-cms2 openssl")
+        message(FATAL_ERROR "${lib} not found. Install with: brew install lz4 zstd little-cms2 openssl libtiff")
     endif()
 endforeach()
 
@@ -189,6 +190,13 @@ set(SOURCES
     BackgroundExtractor.cpp
     BackgroundExtractionWidget.cpp
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFInstance.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFModule.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFOptionsDialog.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFPreferencesDialog.cpp
+    ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFRangeOptionsDialog.cpp
 )
 
 set(HEADERS
@@ -232,6 +240,7 @@ target_include_directories(XISFTestCreator PRIVATE
     ${PCL_INCLUDE_DIRS}
     ${PROJECT_INCLUDE_DIRS}
     /opt/homebrew/include
+    /opt/homebrew/Cellar/eigen/3.4.0_1/include/eigen3
 )
 
 # Link libraries - Add gradient library and pcl_mock BEFORE PCL library
@@ -246,6 +255,7 @@ target_link_libraries(XISFTestCreator PRIVATE
     ${ZSTD_LIBRARY} 
     ${LCMS2_LIBRARY}
     ${CRYPTO_LIBRARY}
+    ${TIFF_LIBRARY}
     z
 )
 
@@ -300,6 +310,7 @@ target_link_libraries(gradient_test PRIVATE
     ${ZSTD_LIBRARY}   # ZSTD compression 
     ${LCMS2_LIBRARY}  # LCMS2 color management (this was missing!)
     ${CRYPTO_LIBRARY} # OpenSSL crypto
+    ${TIFF_LIBRARY}
     z                 # zlib compression
 )
 

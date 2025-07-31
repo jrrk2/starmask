@@ -21,6 +21,7 @@
 #include <cmath>
 #include <random>
 #include <vector>
+#include <Eigen/Dense>
 
 class BackgroundExtractorPrivate
 {
@@ -446,58 +447,20 @@ bool BackgroundExtractionWorker::solveLinearSystem(const std::vector<std::vector
                                                  const std::vector<double>& b, 
                                                  std::vector<double>& x)
 {
-    int n = A.size();
-    if (n == 0 || A[0].size() != n || b.size() != n) {
-        return false;
+    int m = A.size(), n = A[0].size();
+    Eigen::MatrixXd M(m, n);
+    Eigen::VectorXd B(m);
+
+    for (int i = 0; i < m; ++i) {
+        B(i) = b[i];
+        for (int j = 0; j < n; ++j)
+            M(i, j) = A[i][j];
     }
-    
-    // Create augmented matrix
-    std::vector<std::vector<double>> augmented(n, std::vector<double>(n + 1));
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            augmented[i][j] = A[i][j];
-        }
-        augmented[i][n] = b[i];
-    }
-    
-    // Gaussian elimination with partial pivoting
-    for (int i = 0; i < n; ++i) {
-        // Find pivot
-        int pivot = i;
-        for (int j = i + 1; j < n; ++j) {
-            if (std::abs(augmented[j][i]) > std::abs(augmented[pivot][i])) {
-                pivot = j;
-            }
-        }
-        
-        // Swap rows if needed
-        if (pivot != i) {
-            std::swap(augmented[i], augmented[pivot]);
-        }
-        
-        // Check for singular matrix
-        if (std::abs(augmented[i][i]) < 1e-12) {
-            return false;
-        }
-        
-        // Eliminate
-        for (int j = i + 1; j < n; ++j) {
-            double factor = augmented[j][i] / augmented[i][i];
-            for (int k = i; k <= n; ++k) {
-                augmented[j][k] -= factor * augmented[i][k];
-            }
-        }
-    }
-    
-    // Back substitution
+
+    Eigen::VectorXd sol = M.colPivHouseholderQr().solve(B);
     x.resize(n);
-    for (int i = n - 1; i >= 0; --i) {
-        x[i] = augmented[i][n];
-        for (int j = i + 1; j < n; ++j) {
-            x[i] -= augmented[i][j] * x[j];
-        }
-        x[i] /= augmented[i][i];
-    }
+    for (int i = 0; i < n; ++i)
+        x[i] = sol(i);
     
     return true;
 }
@@ -640,17 +603,23 @@ void BackgroundExtractionWorker::calculateErrorMetrics()
 
 void BackgroundExtractionWorker::applyCorrection()
 {
-    if (m_result.backgroundData.size() != m_imageData.pixels.size()) {
-        qDebug() << "Background data size mismatch during correction";
-        return;
+int numPixels = m_result.backgroundData.size();
+int numChannels = m_imageData.pixels.size() / numPixels;
+
+if (numPixels * numChannels != m_imageData.pixels.size()) {
+    qDebug() << "Inconsistent pixel count";
+    return;
+}
+
+m_result.correctedData.resize(m_imageData.pixels.size());
+
+for (int c = 0; c < numChannels; ++c) {
+    for (int i = 0; i < numPixels; ++i) {
+        int idx = i + c * numPixels;
+        m_result.correctedData[idx] =
+            m_imageData.pixels[idx] - m_result.backgroundData[i];
     }
-    
-    m_result.correctedData = m_imageData.pixels;
-    
-    for (int i = 0; i < m_result.correctedData.size(); ++i) {
-        if (m_cancelled) return;
-        m_result.correctedData[i] -= m_result.backgroundData[i];
-    }
+}  
 }
 
 // Add these CORRECTED missing method implementations to BackgroundExtractor.cpp

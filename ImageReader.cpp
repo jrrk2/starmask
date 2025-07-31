@@ -13,6 +13,8 @@
 // FITS support - we confirmed this works
 #include <FITS/FITS.h>
 #define HAS_PCL_FITS 1
+#include <TIFF/TIFF.h>
+#define HAS_PCL_TIFF 1
 
 // Qt includes
 #include <QDebug>
@@ -124,7 +126,40 @@ public:
             return false;
         }
     }
-    
+
+    bool readTIFF(const QString& filePath)
+    {
+	try {
+	    pcl::TIFFReader reader;
+	    reader.Open(pcl::String(filePath.toStdString().c_str()));
+
+	    pcl::Image pclImage;
+	    reader.ReadImage(pclImage);
+
+	    int width = pclImage.Width();
+	    int height = pclImage.Height();
+	    int channels = pclImage.NumberOfChannels();
+
+	    imageData.width = width;
+	    imageData.height = height;
+	    imageData.channels = channels;
+	    imageData.pixels.resize(width * height * channels);
+
+	    for (int c = 0; c < channels; ++c) {
+		const float* plane = pclImage.PixelData(c);
+		for (int i = 0; i < width * height; ++i) {
+		    imageData.pixels[i + c * width * height] = plane[i];
+		}
+	    }
+
+	    return true;
+
+	} catch (const pcl::Exception& e) {
+	    qWarning() << "TIFF load failed:" << e.Message().c_str();
+	    return false;
+	}
+    }
+
     bool readFITS(const QString& filePath) {
         initializePCLMock();
         
@@ -277,6 +312,8 @@ bool ImageReader::readFile(const QString& filePath)
         return d->readXISF(filePath);
     } else if (fileType == "FITS") {
         return d->readFITS(filePath);
+    } else if (fileType == "TIFF") {
+        return d->readTIFF(filePath);
     } else {
         d->lastError = QString("Unsupported file format: %1").arg(fileType);
         return false;
@@ -306,12 +343,12 @@ QString ImageReader::lastError() const
 
 QStringList ImageReader::supportedFormats()
 {
-    return {"XISF", "FITS"};
+  return {"XISF", "FITS", "TIFF"};
 }
 
 QString ImageReader::formatFilter()
 {
-    return "Image Files (*.xisf *.fits *.fit *.fts);;XISF Files (*.xisf);;FITS Files (*.fits *.fit *.fts);;All Files (*)";
+    return "Image Files (*.xisf *.fits *.fit *.fts *.tiff *.tif);;XISF Files (*.xisf);;FITS Files (*.fits *.fit *.fts);;TIFF Files (*.tiff *.tif);;All Files (*)";
 }
 
 QString ImageReader::detectFileType(const QString& filePath)
@@ -322,7 +359,9 @@ QString ImageReader::detectFileType(const QString& filePath)
     if (suffix == "xisf") {
         return "XISF";
     } else if (suffix == "fits" || suffix == "fit" || suffix == "fts") {
-        return "FITS";  // Will return error when trying to read
+        return "FITS";
+    } else if (suffix == "tiff" || suffix == "tif") {
+        return "TIFF";
     }
     
     // Try to detect by file content if extension is unclear
