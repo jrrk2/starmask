@@ -3,7 +3,7 @@
 
 #include "BackgroundExtractor.h"
 
-// Include PCL gradient domain classes
+// Include the actual PCL gradient domain classes
 #include "GradientsBase.h"
 #include "GradientsHdrCompression.h"
 #include "GradientsMergeMosaic.h"
@@ -11,9 +11,7 @@
 // Additional PCL includes for advanced background extraction
 #include <pcl/MultiscaleMedianTransform.h>
 #include <pcl/MorphologicalTransformation.h>
-#include <pcl/ATrousWaveletTransform.h>
 #include <pcl/LinearFit.h>
-#include <pcl/SurfaceSpline.h>
 
 class HardenedBackgroundExtractor : public BackgroundExtractor
 {
@@ -23,7 +21,7 @@ public:
     explicit HardenedBackgroundExtractor(QObject* parent = nullptr);
     ~HardenedBackgroundExtractor();
 
-    // Enhanced background models using PCL infrastructure
+    // Enhanced background models using PCL gradient domain infrastructure
     enum class AdvancedModel {
         // Basic models (from base class)
         Linear = 0,
@@ -31,148 +29,174 @@ public:
         Polynomial3 = 2,
         RBF = 3,
         
-        // Advanced PCL-based models
-        SurfaceSpline = 10,        // PCL SurfaceSpline interpolation
-        MultiscaleMedian = 11,     // Multiscale median transform approach
-        WaveletTransform = 12,     // À-trous wavelet decomposition
-        GradientDomain = 13,       // Full gradient domain solution
-        HybridApproach = 14        // Combination of multiple methods
+        // Advanced gradient domain models
+        GradientDomain = 10,           // Full gradient domain solution using GradientsBase
+        HDRCompression = 11,           // HDR compression for background extraction
+        MultiscaleMedian = 12,         // Multiscale median transform approach
+        MorphologicalMask = 13,        // Morphological operations for background detection
+        HybridGradient = 14            // Combination of gradient methods
     };
 
-    // Enhanced sample generation using PCL algorithms
+    // Enhanced sample generation using gradient domain analysis
     enum class AdvancedSampling {
         // Basic methods (from base class)
         Automatic = 0,
         Manual = 1,
         Grid = 2,
         
-        // Advanced PCL-based methods
-        MultiscaleDetection = 10,   // Use multiscale analysis for detection
-        MorphologicalMask = 11,     // Morphological operations for masking
-        IterativeRefinement = 12,   // Iterative sample refinement
-        AdaptiveGrid = 13,          // Adaptive grid based on image content
-        ClusterAnalysis = 14        // Cluster-based sample selection
+        // Advanced gradient domain methods
+        GradientAnalysis = 10,         // Use gradient magnitude for sample selection
+        LowGradientRegions = 11,       // Focus on low-gradient (background) regions
+        StructureAvoidance = 12,       // Avoid high-structure areas using gradients
+        AdaptiveThreshold = 13,        // Adaptive thresholding based on gradient statistics
+        MultiscaleAnalysis = 14        // Use multiscale decomposition for sampling
     };
 
     // Advanced settings structure
     struct AdvancedBackgroundSettings : public BackgroundExtractionSettings {
-        AdvancedModel advancedModel = AdvancedModel::SurfaceSpline;
-        AdvancedSampling advancedSampling = AdvancedSampling::MultiscaleDetection;
-        
-        // Multiscale parameters
-        int multiscaleLayers = 6;
-        double multiscaleThreshold = 0.01;
-        bool useLinearMask = true;
-        
-        // Surface spline parameters
-        double smoothingFactor = 0.1;
-        int splineOrder = 2;
-        double splineThreshold = 0.5;
+        AdvancedModel advancedModel = AdvancedModel::GradientDomain;
+        AdvancedSampling advancedSampling = AdvancedSampling::GradientAnalysis;
         
         // Gradient domain parameters
-        bool useGradientDomain = false;
-        double maxGradient = 1.0;
-        double minGradient = 0.0;
-        double expGradient = 1.0;
+        double gradientThreshold = 0.1;           // Threshold for low-gradient regions
+        double gradientPercentile = 0.2;          // Percentile for gradient-based thresholding
+        bool useGradientMagnitude = true;         // Use gradient magnitude for analysis
+        
+        // HDR compression parameters (for GradientsHdrCompression)
+        double logMaxGradient = 1.0;              // Log10 of maximum gradient for compression
+        double logMinGradient = -2.0;             // Log10 of minimum gradient
+        double expGradient = 1.0;                 // Exponent for gradient transformation
+        bool rescale01 = true;                    // Rescale to [0,1] range
+        bool preserveColor = true;                // Preserve color ratios
+        
+        // Multiscale parameters
+        int multiscaleLayers = 6;                 // Number of scales for analysis
+        double multiscaleThreshold = 0.01;       // Threshold for multiscale detection
+        bool useLinearMask = true;                // Use linear mask in multiscale
         
         // Morphological parameters
-        int structuringElementSize = 5;
-        int morphologicalIterations = 3;
+        int structuringElementSize = 5;           // Size of morphological structuring element
+        int morphologicalIterations = 3;         // Number of morphological iterations
         
-        // Advanced outlier rejection
-        bool useRobustEstimation = true;
-        double robustThreshold = 2.5;
-        int robustIterations = 5;
+        // Advanced quality control
+        double convergenceThreshold = 0.001;     // Convergence criterion for iterative methods
+        int maxIterations = 50;                  // Maximum iterations for solving
+        bool enableStructureProtection = true;   // Protect astronomical structures
+        double structureProtectionThreshold = 0.1; // Threshold for structure protection
         
-        // Quality control
-        double convergenceThreshold = 0.001;
-        int maxIterations = 50;
-        bool enableStructureProtection = true;
-        double structureProtectionThreshold = 0.1;
+        // Outlier rejection (enhanced)
+        bool useRobustEstimation = true;          // Use robust statistical methods
+        double robustThreshold = 2.5;            // Threshold for robust outlier detection
+        int robustIterations = 5;                // Iterations for robust estimation
     };
 
     // Set advanced settings
     void setAdvancedSettings(const AdvancedBackgroundSettings& settings);
     AdvancedBackgroundSettings advancedSettings() const;
 
-    // Advanced extraction methods
-    bool extractBackgroundWithPCL(const ImageData& imageData);
-    bool extractBackgroundMultiscale(const ImageData& imageData);
-    bool extractBackgroundSurfaceSpline(const ImageData& imageData);
-    bool extractBackgroundGradientDomain(const ImageData& imageData);
-
-    // Quality assessment
-    double assessBackgroundQuality(const QVector<float>& backgroundData, 
-                                  const QVector<float>& originalData) const;
+    // Advanced extraction methods using gradient domain
+    bool extractBackgroundWithGradients(const ImageData& imageData);
+    bool extractBackgroundWithHDRCompression(const ImageData& imageData);
+    bool extractBackgroundWithMultiscale(const ImageData& imageData);
     
-    // Advanced sample generation
-    QVector<QPoint> generateMultiscaleSamples(const ImageData& imageData);
-    QVector<QPoint> generateMorphologicalSamples(const ImageData& imageData);
-    QVector<QPoint> generateAdaptiveGridSamples(const ImageData& imageData);
+    // Quality assessment using gradient domain metrics
+    double assessGradientBackgroundQuality(const QVector<float>& backgroundData, 
+                                          const QVector<float>& originalData) const;
+    
+    // Advanced sample generation using gradient analysis
+    QVector<QPoint> generateGradientBasedSamples(const ImageData& imageData);
+    QVector<QPoint> generateLowGradientSamples(const ImageData& imageData);
+    QVector<QPoint> generateStructureAvoidingSamples(const ImageData& imageData);
 
-    // Utility methods for PCL integration
-    static pcl::Image convertTopcl::Image(const ImageData& imageData);
-    static ImageData convertFromPCLImage(const pcl::Image& pclImage);
-    static QVector<float> convertToQVector(const pcl::DImage& pclImage);
+    // Utility methods for PCL gradient domain integration
+    static GradientsBase::imageType_t convertToGradientImage(const ImageData& imageData);
+    static ImageData convertFromGradientImage(const GradientsBase::imageType_t& gradientImage);
+    static QVector<float> convertGradientToQVector(const GradientsBase::imageType_t& gradientImage);
 
-    // Preset configurations for different image types
-    static AdvancedBackgroundSettings getDeepSkySettings();
-    static AdvancedBackgroundSettings getWidefieldSettings();
-    static AdvancedBackgroundSettings getPlanetarySettings();
-    static AdvancedBackgroundSettings getNoiseReductionSettings();
+    // Preset configurations for different astronomical image types
+    static AdvancedBackgroundSettings getDeepSkyGradientSettings();
+    static AdvancedBackgroundSettings getWidefieldGradientSettings();
+    static AdvancedBackgroundSettings getPlanetaryGradientSettings();
+    static AdvancedBackgroundSettings getHDRProcessingSettings();
 
 signals:
-    void advancedProgressUpdate(const QString& stage, int percentage, const QString& details);
+    void gradientProgressUpdate(const QString& stage, int percentage, const QString& details);
 
 private:
     class AdvancedBackgroundExtractorPrivate;
     std::unique_ptr<AdvancedBackgroundExtractorPrivate> d_advanced;
 
-    // Advanced processing methods
-    bool processMultiscaleExtraction(const pcl::Image& image, pcl::DImage& backgroundModel);
-    bool processSurfaceSplineExtraction(const pcl::Image& image, pcl::DImage& backgroundModel);
-    bool processGradientDomainExtraction(const pcl::Image& image, pcl::DImage& backgroundModel);
+    // Gradient domain processing methods
+    bool processGradientDomainExtraction(const GradientsBase::imageType_t& image, 
+                                       GradientsBase::imageType_t& backgroundModel);
+    bool processHDRCompressionExtraction(const GradientsBase::imageType_t& image,
+                                       GradientsBase::imageType_t& backgroundModel);
+    bool processMultiscaleExtraction(const GradientsBase::imageType_t& image,
+                                   GradientsBase::imageType_t& backgroundModel);
     
-    // Quality control and validation
-    bool validateExtraction(const pcl::DImage& backgroundModel, const pcl::Image& originalImage);
-    double calculateStructureMetric(const pcl::Image& image, const QVector<QPoint>& samples);
+    // Gradient-based sample analysis
+    QVector<QPoint> analyzeGradientField(const GradientsBase::imageType_t& dxImage,
+                                        const GradientsBase::imageType_t& dyImage);
+    double calculateGradientStatistics(const GradientsBase::imageType_t& dxImage,
+                                      const GradientsBase::imageType_t& dyImage,
+                                      double& mean, double& stdDev) const;
     
-    // Advanced sample filtering
-    QVector<QPoint> filterSamplesWithStructureProtection(const QVector<QPoint>& samples, 
-                                                          const pcl::Image& image);
-    QVector<QPoint> refineSamplesIteratively(const QVector<QPoint>& initialSamples, 
-                                            const pcl::Image& image);
+    // Quality control using gradient domain metrics
+    bool validateGradientExtraction(const GradientsBase::imageType_t& backgroundModel,
+                                  const GradientsBase::imageType_t& originalImage);
+    double calculateGradientCoherence(const GradientsBase::imageType_t& image) const;
+    
+    // Advanced filtering and processing
+    QVector<QPoint> filterGradientSamples(const QVector<QPoint>& samples,
+                                         const GradientsBase::imageType_t& image);
+    bool applyGradientBasedSmoothing(GradientsBase::imageType_t& backgroundModel);
 };
 
-// Advanced worker thread for complex processing
-class AdvancedBackgroundWorker : public BackgroundExtractionWorker
+// Advanced worker thread for gradient domain processing
+class AdvancedGradientWorker : public BackgroundExtractionWorker
 {
     Q_OBJECT
 
 public:
-    AdvancedBackgroundWorker(const ImageData& imageData,
-                            const HardenedBackgroundExtractor::AdvancedBackgroundSettings& settings,
-                            QObject* parent = nullptr);
+    AdvancedGradientWorker(const ImageData& imageData,
+                          const HardenedBackgroundExtractor::AdvancedBackgroundSettings& settings,
+                          QObject* parent = nullptr);
 
 signals:
-    void advancedProgress(const QString& stage, int percentage, const QString& details);
+    void gradientProgress(const QString& stage, int percentage, const QString& details);
 
 protected:
     void run() override;
 
 private:
-    bool performAdvancedExtraction();
-    bool executeMultiscaleApproach();
-    bool executeSurfaceSplineApproach();
-    bool executeGradientDomainApproach();
-    bool executeHybridApproach();
+    bool performGradientDomainExtraction();
+    bool executeGradientAnalysis();
+    bool executeHDRCompressionMethod();
+    bool executeMultiscaleMethod();
+    bool executeHybridGradientMethod();
+    
+    // Gradient domain utilities
+    bool computeGradientFields();
+    bool analyzeGradientStatistics();
+    bool selectGradientBasedSamples();
+    bool fitGradientDomainModel();
     
     HardenedBackgroundExtractor::AdvancedBackgroundSettings m_advancedSettings;
     
-    // PCL objects for advanced processing
+    // PCL gradient domain objects
+    std::unique_ptr<GradientsBase> m_gradientBase;
+    std::unique_ptr<GradientsHdrCompression> m_hdrCompressor;
     std::unique_ptr<pcl::MultiscaleMedianTransform> m_multiscaleTransform;
-    std::unique_ptr<pcl::SurfaceSpline<pcl::RBFType::ThinPlateSpline>> m_surfaceSpline;
-    std::unique_ptr<GradientsHdrCompression> m_gradientProcessor;
+    
+    // Gradient field data
+    GradientsBase::imageType_t m_dxImage;
+    GradientsBase::imageType_t m_dyImage;
+    GradientsBase::imageType_t m_workingImage;
+    
+    // Statistics
+    double m_gradientMean = 0.0;
+    double m_gradientStdDev = 0.0;
+    double m_gradientThreshold = 0.0;
 };
 
 #endif // HARDENED_BACKGROUND_EXTRACTOR_H
