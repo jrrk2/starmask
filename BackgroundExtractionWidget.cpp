@@ -1,4 +1,5 @@
 #include "BackgroundExtractionWidget.h"
+#include "ImageDisplayWidget.h"
 #include "ImageReader.h"
 
 #include <QHeaderView>
@@ -35,7 +36,6 @@ BackgroundExtractionWidget::BackgroundExtractionWidget(QWidget* parent)
     
     // Load settings
     loadSettings();
-    setupChannelTab();
     updateUIFromParameters();
     enableControls(false); // Disable until image is loaded
 }
@@ -54,12 +54,14 @@ void BackgroundExtractionWidget::setupUI()
     m_mainLayout->addWidget(m_tabWidget);
     
     setupParametersTab();
+    setupChannelTab();
     setupAdvancedTab();
     setupResultsTab();
     setupDisplayTab();
     
     // Add tabs
     m_tabWidget->addTab(m_parametersTab, "Parameters");
+    m_tabWidget->addTab(m_channelTab, "Channel");
     m_tabWidget->addTab(m_advancedTab, "Advanced");
     m_tabWidget->addTab(m_resultsTab, "Results");
     m_tabWidget->addTab(m_displayTab, "Display");
@@ -281,17 +283,10 @@ void BackgroundExtractionWidget::setupParametersTab()
     m_cancelButton->setVisible(false);
     connect(m_cancelButton, &QPushButton::clicked,
             this, &BackgroundExtractionWidget::onCancelClicked);
-    
-    m_applyButton = new QPushButton("Apply Correction");
-    m_applyButton->setEnabled(false);
-    connect(m_applyButton, &QPushButton::clicked,
-            this, &BackgroundExtractionWidget::onApplyClicked);
-    
     actionLayout->addWidget(m_previewButton);
     actionLayout->addWidget(m_extractButton);
     actionLayout->addWidget(m_cancelButton);
     actionLayout->addStretch();
-    actionLayout->addWidget(m_applyButton);
     
     layout->addWidget(m_actionGroup);
     
@@ -401,38 +396,28 @@ void BackgroundExtractionWidget::setupDisplayTab()
 {
     m_displayTab = new QWidget;
     auto* layout = new QVBoxLayout(m_displayTab);
-    
+    /*    
     // Display options
     m_displayGroup = new QGroupBox("Display Options");
     auto* displayLayout = new QGridLayout(m_displayGroup);
     
     m_showBackgroundCheck = new QCheckBox("Show background model");
     m_showBackgroundCheck->setToolTip("Display the extracted background model");
-    connect(m_showBackgroundCheck, &QCheckBox::toggled,
-            this, &BackgroundExtractionWidget::onShowBackgroundToggled);
-    
-    m_showCorrectedCheck = new QCheckBox("Show corrected image");
-    m_showCorrectedCheck->setToolTip("Display the background-corrected image");
-    connect(m_showCorrectedCheck, &QCheckBox::toggled,
-            this, &BackgroundExtractionWidget::onShowCorrectedToggled);
+    m_showBackgroundCheck->setChecked(true);  // Default to checked
     
     m_showSamplesCheck = new QCheckBox("Show sample points");
-    m_showSamplesCheck->setToolTip("Overlay sample points on the image");
-    m_showSamplesCheck->setChecked(true);
-    connect(m_showSamplesCheck, &QCheckBox::toggled,
-            this, &BackgroundExtractionWidget::onShowSamplesToggled);
-    
-    m_showModelCheck = new QCheckBox("Show model visualization");
-    m_showModelCheck->setToolTip("Show model fitting visualization");
-    connect(m_showModelCheck, &QCheckBox::toggled,
-            this, &BackgroundExtractionWidget::onShowModelToggled);
+    m_showSamplesCheck->setToolTip("Overlay sample points on the background model");
+    m_showSamplesCheck->setChecked(true);  // Default to checked
     
     displayLayout->addWidget(m_showBackgroundCheck, 0, 0);
-    displayLayout->addWidget(m_showCorrectedCheck, 0, 1);
-    displayLayout->addWidget(m_showSamplesCheck, 1, 0);
-    displayLayout->addWidget(m_showModelCheck, 1, 1);
+    displayLayout->addWidget(m_showSamplesCheck, 0, 1);
     
     layout->addWidget(m_displayGroup);
+    */
+    // Add a dedicated image display widget for the background model
+    m_backgroundDisplayWidget = new ImageDisplayWidget;
+    m_backgroundDisplayWidget->setMinimumHeight(300);
+    layout->addWidget(m_backgroundDisplayWidget, 1);  // Give it stretch
     
     // Save options
     m_saveGroup = new QGroupBox("Save Results");
@@ -453,8 +438,6 @@ void BackgroundExtractionWidget::setupDisplayTab()
     saveLayout->addStretch();
     
     layout->addWidget(m_saveGroup);
-    
-    layout->addStretch();
 }
 
 void BackgroundExtractionWidget::setImageData(const ImageData& imageData)
@@ -572,7 +555,6 @@ void BackgroundExtractionWidget::enableControls(bool enabled)
 {
     m_previewButton->setEnabled(enabled && !m_extractor->isExtracting());
     m_extractButton->setEnabled(enabled && !m_extractor->isExtracting());
-    m_applyButton->setEnabled(enabled && m_hasResult);
 }
 
 void BackgroundExtractionWidget::updateResults()
@@ -652,7 +634,13 @@ void BackgroundExtractionWidget::onExtractionFinished(bool success)
     m_hasResult = success;
     
     if (success) {
-        const BackgroundExtractionResult& result = m_extractor->result();
+        const BackgroundExtractionResult result = m_extractor->result();
+        updateBackgroundDisplay();
+        
+        // Enable save buttons
+        m_saveBackgroundButton->setEnabled(!result.backgroundData.isEmpty());
+        m_saveCorrectedButton->setEnabled(!result.correctedData.isEmpty());
+	
         m_statusLabel->setText(QString("Background extraction completed in %1s")
                               .arg(result.processingTimeSeconds, 0, 'f', 2));
         
@@ -677,7 +665,7 @@ void BackgroundExtractionWidget::onExtractionFinished(bool success)
         
         showSuccess("Background extraction completed successfully!");
     } else {
-        const BackgroundExtractionResult& result = m_extractor->result();
+        const BackgroundExtractionResult result = m_extractor->result();
         m_statusLabel->setText("Background extraction failed");
         showError(QString("Background extraction failed: %1").arg(result.errorMessage));
     }
@@ -863,8 +851,7 @@ void BackgroundExtractionWidget::updateSampleDisplay()
 // Display option slots
 void BackgroundExtractionWidget::onShowBackgroundToggled(bool show)
 {
-    Q_UNUSED(show)
-    // This would update the image display to show/hide the background model
+  updateBackgroundDisplay();
 }
 
 void BackgroundExtractionWidget::onShowCorrectedToggled(bool show)
@@ -875,8 +862,7 @@ void BackgroundExtractionWidget::onShowCorrectedToggled(bool show)
 
 void BackgroundExtractionWidget::onShowSamplesToggled(bool show)
 {
-    Q_UNUSED(show)
-    // This would update the image display to show/hide sample points
+  updateBackgroundDisplay();
 }
 
 void BackgroundExtractionWidget::onShowModelToggled(bool show)
@@ -974,7 +960,7 @@ bool BackgroundExtractionWidget::hasResult() const
     return m_extractor && m_extractor->hasResult();
 }
 
-const BackgroundExtractionResult& BackgroundExtractionWidget::result() const
+const BackgroundExtractionResult BackgroundExtractionWidget::result() const
 {
     static BackgroundExtractionResult emptyResult;
     if (m_extractor) {
@@ -1735,4 +1721,33 @@ void BackgroundExtractionWidget::onChannelCompleted(int channel, const ChannelRe
             emit channelCorrectedReady(channel, result.correctedData, m_imageData->width, m_imageData->height);
         }
     }
+}
+
+void BackgroundExtractionWidget::updateBackgroundDisplay()
+{
+    if (!m_extractor->hasResult() || !m_imageData) {
+        m_backgroundDisplayWidget->clearImage();
+        return;
+    }
+    
+    const BackgroundExtractionResult& result = m_extractor->result();
+    
+    if (result.backgroundData.isEmpty()) {
+        m_backgroundDisplayWidget->clearImage();
+        return;
+    }
+    
+    // Create ImageData for the background model
+    ImageData backgroundImageData;
+    backgroundImageData.width = m_imageData->width;
+    backgroundImageData.height = m_imageData->height;
+    backgroundImageData.channels = m_imageData->channels;
+    backgroundImageData.pixels = result.backgroundData;
+    backgroundImageData.format = "Background Model";
+    backgroundImageData.colorSpace = m_imageData->colorSpace;
+    
+    // Set the background image
+    m_backgroundDisplayWidget->setImageData(backgroundImageData);
+    
+    // TODO: Add sample point overlay (see next step)
 }

@@ -119,7 +119,8 @@ void ImageDisplayWidget::setupUI()
 
 void ImageDisplayWidget::setImageData(const ImageData& imageData)
 {
-    m_imageData = const_cast<ImageData*>(&imageData);
+    m_ownedImageData = std::make_unique<ImageData>(imageData);
+    m_imageData = m_ownedImageData.get();
     
     if (!imageData.isValid()) {
         clearImage();
@@ -152,6 +153,7 @@ void ImageDisplayWidget::setImageData(const ImageData& imageData)
 
 void ImageDisplayWidget::clearImage()
 {
+    m_ownedImageData.reset();
     m_imageData = nullptr;
     m_currentPixmap = QPixmap();
     m_imageLabel->setPixmap(QPixmap());

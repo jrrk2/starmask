@@ -44,6 +44,7 @@ public:
     const ImageData& imageData() const;
     bool hasImage() const;
     void clear();
+    void setImageData(const ImageData& imageData);
     
     // Error handling
     QString lastError() const;

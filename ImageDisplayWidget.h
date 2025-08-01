@@ -80,7 +80,8 @@ private:
     QSpinBox* m_maxSpinBox;
     
     // Data
-    ImageData* m_imageData;
+    std::unique_ptr<ImageData> m_ownedImageData;  // Own the data
+    const ImageData* m_imageData;
     QPixmap m_currentPixmap;
     double m_zoomFactor;
     bool m_autoStretchEnabled;

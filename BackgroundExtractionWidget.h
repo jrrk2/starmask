@@ -51,7 +51,7 @@ public:
     
     // Result access
     bool hasResult() const;
-    const BackgroundExtractionResult& result() const;
+    const BackgroundExtractionResult result() const;
     
     // NEW: Per-channel result access
     ChannelResult getChannelResult(int channel) const;
@@ -144,6 +144,7 @@ private:
     void updatePreview();
     void updateSampleDisplay();
     void updateChannelDisplay();    // NEW: Update channel visualization
+    void updateBackgroundDisplay();
     
     void enableControls(bool enabled);
     void resetProgress();
@@ -200,7 +201,6 @@ private:
     QPushButton* m_previewButton;
     QPushButton* m_extractButton;
     QPushButton* m_cancelButton;
-    QPushButton* m_applyButton;
     
     // NEW: Channel Tab
     QWidget* m_channelTab;
@@ -269,15 +269,16 @@ private:
     
     // Display Tab (enhanced)
     QWidget* m_displayTab;
-    QGroupBox* m_displayGroup;
+  //    QGroupBox* m_displayGroup;
     QGroupBox* m_channelDisplayGroup;  // NEW
     QGroupBox* m_saveGroup;
     
-    QCheckBox* m_showBackgroundCheck;
-    QCheckBox* m_showCorrectedCheck;
-    QCheckBox* m_showSamplesCheck;
-    QCheckBox* m_showModelCheck;
-    
+  //    QCheckBox* m_showBackgroundCheck;
+  //    QCheckBox* m_showCorrectedCheck;
+  //    QCheckBox* m_showSamplesCheck;
+  //    QCheckBox* m_showModelCheck;
+    ImageDisplayWidget* m_backgroundDisplayWidget;  // ← Add this
+  
     QLabel* m_displayChannelLabel;     // NEW
     QComboBox* m_displayChannelCombo;  // NEW: Select which channel to display
     QCheckBox* m_overlayChannelsCheck; // NEW: Overlay multiple channels

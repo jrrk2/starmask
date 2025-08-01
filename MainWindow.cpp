@@ -192,8 +192,17 @@ void MainWindow::onSaveAs()
     );
     
     if (!fileName.isEmpty()) {
-        // Implementation would save the current image
-        logMessage("Save functionality not yet implemented");
+        const ImageData& imageData = m_imageReader->imageData();
+        
+        if (saveImageData(imageData, fileName, "Original")) {
+            logMessage("✓ Successfully saved image to: " + fileName);
+            QMessageBox::information(this, "Save Successful", 
+                "Image saved successfully!");
+        } else {
+            logMessage("✗ Failed to save image");
+            QMessageBox::critical(this, "Save Failed", 
+                "Failed to save image. Check the log for details.");
+        }
     }
 }
 
@@ -311,19 +320,35 @@ void MainWindow::onBackgroundModelChanged(const QVector<float>& backgroundData, 
 
 void MainWindow::onCorrectedImageReady(const QVector<float>& correctedData, int width, int height, int channels)
 {
-    // Create corrected image data structure
-    ImageData correctedImageData;
-    correctedImageData.width = width;
-    correctedImageData.height = height;
-    correctedImageData.channels = channels;
-    correctedImageData.pixels = correctedData;
-    correctedImageData.format = "Background Corrected";
-    correctedImageData.colorSpace = (channels == 1) ? "Grayscale" : "RGB";
+    if (!m_imageReader->hasImage()) {
+        return;
+    }
     
-    // Update the main image display with corrected data
-    m_imageDisplay->setImageData(correctedImageData);
+    // Get original metadata to preserve what we can
+    const ImageData& original = m_imageReader->imageData();
     
-    logMessage(QString("✓ Background correction applied to image display"));
+    // Create new ImageData with corrected pixels but original metadata
+    ImageData correctedImage;
+    correctedImage.width = width;
+    correctedImage.height = height;
+    correctedImage.channels = channels;
+    correctedImage.pixels = correctedData;
+    correctedImage.format = "Background Corrected";
+    correctedImage.colorSpace = original.colorSpace;
+    
+    // Preserve original metadata and add correction info
+    correctedImage.metadata = original.metadata;
+    correctedImage.metadata.prepend("Processing: Background correction applied");
+    correctedImage.metadata.prepend(QString("Correction applied: %1")
+                                   .arg(QDateTime::currentDateTime().toString()));
+    
+    // Clear the reader and create new image data
+    m_imageReader->setImageData(correctedImage);
+    
+    // Update display
+    m_imageDisplay->setImageData(correctedImage);
+    
+    logMessage("✓ Background correction applied - image replaced");
 }
 
 void MainWindow::onExtractBackground()
@@ -440,9 +465,16 @@ void MainWindow::createCorrectedImageWindow(const QVector<float>& correctedData,
         );
         
         if (!fileName.isEmpty()) {
-            // Here you would use SimplifiedXISFWriter to save the corrected image
-            logMessage("Corrected image would be saved to: " + fileName);
+        if (saveImageData(correctedImageData, fileName, "Background Corrected")) {
+            logMessage("✓ Successfully saved corrected image to: " + fileName);
+            QMessageBox::information(this, "Save Successful", 
+                "Background corrected image saved successfully!");
+        } else {
+            logMessage("✗ Failed to save corrected image");
+            QMessageBox::critical(this, "Save Failed", 
+                "Failed to save corrected image. Check the log for details.");
         }
+	}
     });
     
     connect(closeButton, &QPushButton::clicked, correctedDialog, &QDialog::accept);
@@ -456,4 +488,118 @@ void MainWindow::createCorrectedImageWindow(const QVector<float>& correctedData,
     correctedDialog->show();
     
     logMessage("✓ Created background corrected image window");
+}
+
+/*
+bool MainWindow::saveCorrectedImage(const ImageData& imageData, const QString& fileName)
+{
+    try {
+        SimplifiedXISFWriter writer(fileName, CompressionType::ZLib);
+        writer.setCreatorApplication("XISF Test Creator - Background Corrected");
+        
+        // Add metadata
+        writer.addProperty("ProcessingType", "String", "Background Correction", "Type of processing applied");
+        writer.addProperty("OriginalFile", "String", QFileInfo(m_currentFilePath).fileName(), "Original image file");
+        writer.addProperty("ProcessingDate", "String", QDateTime::currentDateTime().toString(Qt::ISODate), "Processing date");
+        
+        // Add background extraction statistics if available
+        if (m_backgroundWidget && m_backgroundWidget->hasResult()) {
+            const BackgroundExtractionResult& result = m_backgroundWidget->result();
+            writer.addImageProperty("BackgroundModel", "String", "Polynomial", "Background model used");
+            writer.addImageProperty("SamplesUsed", "Int32", result.samplesUsed, "Number of samples used");
+            writer.addImageProperty("RMSError", "Float64", result.rmsError, "RMS fitting error");
+            writer.addImageProperty("ProcessingTime", "Float64", result.processingTimeSeconds, "Processing time in seconds");
+        }
+        
+        // Add the image
+        if (!writer.addImage("corrected_image", imageData.pixels.constData(),
+                           imageData.width, imageData.height, imageData.channels)) {
+            return false;
+        }
+        
+        return writer.write();
+        
+    } catch (const std::exception& e) {
+        logMessage(QString("Exception saving corrected image: %1").arg(e.what()));
+        return false;
+    }
+}
+*/
+
+bool MainWindow::saveImageData(const ImageData& imageData, const QString& fileName, const QString& imageType)
+{
+    try {
+        SimplifiedXISFWriter writer(fileName, CompressionType::ZLib);
+        writer.setCreatorApplication("XISF Test Creator");
+        
+        // Add global properties
+        writer.addProperty("SavedBy", "String", "XISF Test Creator", "Application that saved this file");
+        writer.addProperty("SaveDate", "String", QDateTime::currentDateTime().toString(Qt::ISODate), "Date saved");
+        writer.addProperty("ImageType", "String", imageType, "Type of image");
+        
+        if (!m_currentFilePath.isEmpty()) {
+            writer.addProperty("OriginalFile", "String", QFileInfo(m_currentFilePath).fileName(), "Original source file");
+        }
+        
+        // Add image-specific properties
+        writer.addImageProperty("Dimensions", "String", 
+            QString("%1x%2x%3").arg(imageData.width).arg(imageData.height).arg(imageData.channels),
+            "Image dimensions");
+        writer.addImageProperty("Format", "String", imageData.format, "Original format");
+        writer.addImageProperty("ColorSpace", "String", imageData.colorSpace, "Color space");
+        
+        // If this is a corrected image, add background extraction info
+        if (imageType == "Background Corrected" && m_backgroundWidget && m_backgroundWidget->hasResult()) {
+            const BackgroundExtractionResult& result = m_backgroundWidget->result();
+            writer.addImageProperty("BackgroundModel", "String", "Polynomial", "Background model used");
+            writer.addImageProperty("SamplesUsed", "Int32", result.samplesUsed, "Number of samples used");
+            writer.addImageProperty("RMSError", "Float64", result.rmsError, "RMS fitting error");
+            writer.addImageProperty("ProcessingTime", "Float64", result.processingTimeSeconds, "Processing time in seconds");
+            
+            // Add per-channel results if available
+            if (result.usedChannelMode == ChannelMode::PerChannel && !result.channelResults.isEmpty()) {
+                writer.addImageProperty("ProcessingMode", "String", "Per-Channel", "Background processing mode");
+                writer.addImageProperty("ChannelCount", "Int32", result.channelResults.size(), "Number of channels processed");
+                
+                for (int i = 0; i < result.channelResults.size(); ++i) {
+                    const ChannelResult& ch = result.channelResults[i];
+                    writer.addImageProperty(QString("Channel%1_Samples").arg(i), "Int32", ch.samplesUsed, QString("Samples used for channel %1").arg(i));
+                    writer.addImageProperty(QString("Channel%1_RMS").arg(i), "Float64", ch.rmsError, QString("RMS error for channel %1").arg(i));
+                }
+            }
+        }
+        
+        // Copy original metadata if available
+        for (const QString& meta : imageData.metadata) {
+            // Simple way to preserve some original metadata
+            if (meta.contains("WCS:") || meta.contains("Stellina:")) {
+                QStringList parts = meta.split(": ");
+                if (parts.size() >= 2) {
+                    writer.addImageProperty(parts[0], "String", parts[1], "Preserved from original");
+                }
+            }
+        }
+        
+        // Determine image ID based on type
+        QString imageId = (imageType == "Background Corrected") ? "corrected_image" : "main_image";
+        
+        // Add the image data
+        if (!writer.addImage(imageId, imageData.pixels.constData(),
+                           imageData.width, imageData.height, imageData.channels)) {
+            logMessage("✗ Failed to add image data to XISF writer");
+            return false;
+        }
+        
+        // Write the file
+        if (!writer.write()) {
+            logMessage("✗ XISF write failed: " + writer.lastError());
+            return false;
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        logMessage(QString("Exception saving image: %1").arg(e.what()));
+        return false;
+    }
 }

@@ -336,6 +336,12 @@ void ImageReader::clear()
     d->lastError.clear();
 }
 
+void ImageReader::setImageData(const ImageData& imageData)
+{
+    d->imageData = imageData;
+    d->lastError.clear();
+}
+
 QString ImageReader::lastError() const
 {
     return d->lastError;

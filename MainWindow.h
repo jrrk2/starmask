@@ -58,9 +58,11 @@ private:
     void setupViewTab();
     void setupBackgroundTab();
     
-    void loadImageFile(const QString& filePath);
     void updateImageInfo();
     void logMessage(const QString& message);
+    void loadImageFile(const QString& filePath);
+    bool saveCorrectedImage(const ImageData& imageData, const QString& fileName);
+    bool saveImageData(const ImageData& imageData, const QString& fileName, const QString& imageType = "Image");
     
     // Background extraction helper functions
     void createBackgroundImageWindow(const QVector<float>& backgroundData, int width, int height, int channels);
