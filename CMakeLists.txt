@@ -284,7 +284,7 @@ target_compile_options(XISFTestCreator PRIVATE
     -Wno-dangling-else
     -Wno-extern-c-compat
     -Wno-asm-operand-widths
-    -O0 -g
+    -O3 -g
 )
 
 # Compiler definitions
