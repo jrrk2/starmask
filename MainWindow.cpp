@@ -14,37 +14,12 @@
 // We'll use our own StarMaskGenerator instead
 // #include <pcl/StarDetector.h>
 
+#include <QApplication>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QStandardPaths>
 #include <QDebug>
-
-MainWindow::MainWindow(QWidget* parent)
-    : QMainWindow(parent)
-    , m_imageReader(std::make_unique<ImageReader>())
-    , m_imageData(nullptr)
-{
-    QWidget* central = new QWidget;
-    QVBoxLayout* layout = new QVBoxLayout(central);
-
-    m_imageDisplayWidget = new ImageDisplayWidget;
-    m_loadButton = new QPushButton("Load Image");
-    m_detectButton = new QPushButton("Detect Stars");
-    m_statusLabel = new QLabel("Ready");
-
-    layout->addWidget(m_imageDisplayWidget);
-    layout->addWidget(m_loadButton);
-    layout->addWidget(m_detectButton);
-    layout->addWidget(m_statusLabel);
-
-    connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
-    connect(m_detectButton, &QPushButton::clicked, this, &MainWindow::onDetectStars);
-
-    setCentralWidget(central);
-    resize(800, 600);
-    setWindowTitle("Star Mask Demo");
-}
 
 MainWindow::~MainWindow() {}
 
@@ -73,6 +48,7 @@ void MainWindow::onLoadImage()
     m_imageDisplayWidget->setImageData(m_imageReader->imageData());
     m_statusLabel->setText("Image loaded.");
 }
+// Add this to MainWindow.cpp - update the onDetectStars method:
 
 void MainWindow::onDetectStars()
 {
@@ -81,12 +57,71 @@ void MainWindow::onDetectStars()
         return;
     }
 
+    m_statusLabel->setText("Detecting stars...");
+    QApplication::processEvents();  // Update UI
+
     // Use our StarMaskGenerator instead of PCL StarDetector
     m_lastStarMask = StarMaskGenerator::detectStars(m_imageReader->imageData(), 0.5f);
     m_imageDisplayWidget->setImageData(m_imageReader->imageData());
     m_imageDisplayWidget->setStarOverlay(m_lastStarMask.starCenters, m_lastStarMask.starRadii);
 
-    m_statusLabel->setText(QString("Detected %1 stars").arg(m_lastStarMask.starCenters.size()));
+    // Update status with star count and toggle info
+    QString statusText = QString("Detected %1 stars").arg(m_lastStarMask.starCenters.size());
+    if (m_lastStarMask.starCenters.size() > 0) {
+        statusText += " - Use checkbox to toggle display";
+    }
+    m_statusLabel->setText(statusText);
+}
+
+// Optional: Add this to MainWindow constructor to connect to the star overlay signal:
+
+MainWindow::MainWindow(QWidget* parent)
+    : QMainWindow(parent)
+    , m_imageReader(std::make_unique<ImageReader>())
+    , m_imageData(nullptr)
+{
+    QWidget* central = new QWidget;
+    QVBoxLayout* layout = new QVBoxLayout(central);
+
+    m_imageDisplayWidget = new ImageDisplayWidget;
+    m_loadButton = new QPushButton("Load Image");
+    m_detectButton = new QPushButton("Detect Stars");
+    m_statusLabel = new QLabel("Ready");
+
+    layout->addWidget(m_imageDisplayWidget);
+    
+    // Button layout
+    QHBoxLayout* buttonLayout = new QHBoxLayout;
+    buttonLayout->addWidget(m_loadButton);
+    buttonLayout->addWidget(m_detectButton);
+    buttonLayout->addStretch();  // Push buttons to left
+    
+    layout->addLayout(buttonLayout);
+    layout->addWidget(m_statusLabel);
+
+    connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
+    connect(m_detectButton, &QPushButton::clicked, this, &MainWindow::onDetectStars);
+    
+    // Connect to star overlay toggle signal for status updates
+    connect(m_imageDisplayWidget, &ImageDisplayWidget::starOverlayToggled, 
+            this, &MainWindow::onStarOverlayToggled);
+
+    setCentralWidget(central);
+    resize(1000, 700);  // Make window a bit larger
+    setWindowTitle("Star Mask Demo - Enhanced");
+}
+
+// Add this new slot to MainWindow:
+
+void MainWindow::onStarOverlayToggled(bool visible)
+{
+    if (m_lastStarMask.starCenters.isEmpty()) {
+        return;  // No stars to show/hide
+    }
+    
+    QString baseText = QString("Detected %1 stars").arg(m_lastStarMask.starCenters.size());
+    QString statusText = baseText + (visible ? " - Stars visible" : " - Stars hidden");
+    m_statusLabel->setText(statusText);
 }
 
 void MainWindow::runStarDetection()

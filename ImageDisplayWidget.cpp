@@ -30,6 +30,7 @@ ImageDisplayWidget::ImageDisplayWidget(QWidget *parent)
 }
 
 ImageDisplayWidget::~ImageDisplayWidget() = default;
+// Update the setupUI() method in ImageDisplayWidget.cpp to add the star toggle:
 
 void ImageDisplayWidget::setupUI()
 {
@@ -58,6 +59,26 @@ void ImageDisplayWidget::setupUI()
     m_controlLayout->addWidget(m_zoomFitButton);
     m_controlLayout->addWidget(m_zoom100Button);
     m_controlLayout->addWidget(m_zoomLabel);
+    
+    // Add separator
+    auto* separator1 = new QFrame();
+    separator1->setFrameShape(QFrame::VLine);
+    separator1->setFrameShadow(QFrame::Sunken);
+    m_controlLayout->addWidget(separator1);
+    
+    // NEW: Star overlay toggle
+    m_showStarsCheck = new QCheckBox("Show Stars");
+    m_showStarsCheck->setChecked(m_showStars);  // Use current state
+    m_showStarsCheck->setToolTip("Toggle star detection overlay");
+    connect(m_showStarsCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowStarsToggled);
+    m_controlLayout->addWidget(m_showStarsCheck);
+    
+    // Add another separator
+    auto* separator2 = new QFrame();
+    separator2->setFrameShape(QFrame::VLine);
+    separator2->setFrameShadow(QFrame::Sunken);
+    m_controlLayout->addWidget(separator2);
+    
     m_controlLayout->addStretch();
     
     // Stretch controls
@@ -115,6 +136,60 @@ void ImageDisplayWidget::setupUI()
     
     // Initial state
     onAutoStretchToggled(m_autoStretchEnabled);
+}
+
+// Add the new slot method:
+
+void ImageDisplayWidget::onShowStarsToggled(bool show)
+{
+    m_showStars = show;
+    qDebug() << "Star overlay toggled:" << (show ? "ON" : "OFF");
+    updateDisplay();  // Refresh the display
+    
+    // Emit signal so other components can react if needed
+    emit starOverlayToggled(show);
+}
+
+// Add the public method for programmatic control:
+
+void ImageDisplayWidget::setStarOverlayVisible(bool visible)
+{
+    if (m_showStars != visible) {
+        m_showStars = visible;
+        m_showStarsCheck->setChecked(visible);  // Update the checkbox
+        updateDisplay();
+    }
+}
+
+// Update the setStarOverlay method to enable the checkbox:
+
+void ImageDisplayWidget::setStarOverlay(const QVector<QPoint>& centers, const QVector<float>& radii)
+{
+    m_starCenters = centers;
+    m_starRadii = radii;
+    
+    // If we have stars, enable the checkbox and show them by default
+    if (!centers.isEmpty()) {
+        m_showStars = true;
+        m_showStarsCheck->setChecked(true);
+        m_showStarsCheck->setEnabled(true);  // Enable the checkbox
+    } else {
+        m_showStarsCheck->setEnabled(false);  // Disable if no stars
+    }
+    
+    updateDisplay();
+}
+
+// Update clearStarOverlay method:
+
+void ImageDisplayWidget::clearStarOverlay()
+{
+    m_starCenters.clear();
+    m_starRadii.clear();
+    m_showStars = false;
+    m_showStarsCheck->setChecked(false);
+    m_showStarsCheck->setEnabled(false);  // Disable checkbox when no stars
+    updateDisplay();
 }
 
 void ImageDisplayWidget::setImageData(const ImageData& imageData)
@@ -488,20 +563,4 @@ void ImageDisplayWidget::stretchImageData(const float* input, float* output, siz
         double stretched = (input[i] - minVal) * scale;
         output[i] = static_cast<float>(std::clamp(stretched, 0.0, 1.0));
     }
-}
-
-void ImageDisplayWidget::setStarOverlay(const QVector<QPoint>& centers, const QVector<float>& radii)
-{
-    m_starCenters = centers;
-    m_starRadii = radii;
-    m_showStars = true;
-    updateDisplay(); // triggers repaint
-}
-
-void ImageDisplayWidget::clearStarOverlay()
-{
-    m_starCenters.clear();
-    m_starRadii.clear();
-    m_showStars = false;
-    updateDisplay();
 }

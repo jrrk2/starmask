@@ -9,6 +9,8 @@
 #include <QPushButton>
 #include <QSlider>
 #include <QSpinBox>
+#include <QCheckBox>
+#include <QFrame>
 #include <QPixmap>
 
 struct ImageData;
@@ -33,14 +35,17 @@ public:
     
     void setStretchLimits(double minValue, double maxValue);
     void getStretchLimits(double& minValue, double& maxValue) const;
+    
+    // Star overlay controls
     void setStarOverlay(const QVector<QPoint>& centers, const QVector<float>& radii);
-  
+    void clearStarOverlay();
+    void setStarOverlayVisible(bool visible);
+    bool isStarOverlayVisible() const { return m_showStars; }
+
 signals:
     void imageClicked(int x, int y, float value);
     void zoomChanged(double factor);
-
-public slots:
-    void clearStarOverlay();
+    void starOverlayToggled(bool visible);
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -53,6 +58,7 @@ private slots:
     void onZoom100Clicked();
     void onAutoStretchToggled(bool enabled);
     void onStretchChanged();
+    void onShowStarsToggled(bool show);
 
 private:
     void setupUI();
@@ -73,6 +79,9 @@ private:
     QPushButton* m_zoomFitButton;
     QPushButton* m_zoom100Button;
     QLabel* m_zoomLabel;
+    
+    // Star overlay control
+    QCheckBox* m_showStarsCheck;
     
     // Stretch controls
     QPushButton* m_autoStretchButton;
@@ -98,6 +107,7 @@ private:
     double m_imageMean;
     double m_imageStdDev;
 
+    // Star overlay data
     QVector<QPoint> m_starCenters;
     QVector<float> m_starRadii;
     bool m_showStars = false;

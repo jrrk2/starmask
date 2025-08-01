@@ -23,7 +23,8 @@ private slots:
     void onLoadImage();
     void onDetectStars();
     void runStarDetection();
-
+    void onStarOverlayToggled(bool visible);  // Add this line
+  
 private:
     std::unique_ptr<ImageReader> m_imageReader;
     ImageDisplayWidget* m_imageDisplayWidget;
