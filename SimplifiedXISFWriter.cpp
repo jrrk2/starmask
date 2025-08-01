@@ -12,8 +12,7 @@
 #include <pcl/api/APIInterface.h>
 
 // Your project includes
-#include "StellinaProcessor.h"
-#include <structuredefinitions.h>
+#include "structuredefinitions.h"
 
 // Qt includes
 #include <QDebug>
@@ -223,23 +222,6 @@ void SimplifiedXISFWriter::addWCSData(const FITSImage::Solution& solution)
     }
     
     qDebug() << "Added WCS data: RA" << solution.ra << "Dec" << solution.dec;
-}
-
-void SimplifiedXISFWriter::addStellinaMetadata(const StellinaImageData& imageData)
-{
-    addImageProperty("Stellina:Altitude", "Float64", imageData.altitude, "Mount altitude (degrees)");
-    addImageProperty("Stellina:Azimuth", "Float64", imageData.azimuth, "Mount azimuth (degrees)");
-    addImageProperty("Stellina:Exposure", "Int32", imageData.exposureSeconds, "Exposure time (seconds)");
-    addImageProperty("Stellina:Temperature", "Int32", imageData.temperatureKelvin, "Sensor temperature (K)");
-    addImageProperty("Stellina:Binning", "String", imageData.binning, "Binning mode");
-    addImageProperty("Stellina:BayerPattern", "String", imageData.bayerPattern, "CFA pattern");
-    
-    if (imageData.hasCalculatedCoords) {
-        addImageProperty("Stellina:CalculatedRA", "Float64", imageData.calculatedRA, "Calculated RA (degrees)");
-        addImageProperty("Stellina:CalculatedDec", "Float64", imageData.calculatedDec, "Calculated Dec (degrees)");
-    }
-    
-    qDebug() << "Added Stellina metadata";
 }
 
 void SimplifiedXISFWriter::addProcessingHistory(const QString& step, const QJsonObject& parameters)
