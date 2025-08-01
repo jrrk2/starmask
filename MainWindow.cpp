@@ -10,7 +10,6 @@ MainWindow::MainWindow(QWidget *parent)
     
     // Initialize with no file loaded state
     m_statusLabel->setText("Ready - No image loaded");
-    updateBackgroundMenuActions(false);
 }
 
 MainWindow::~MainWindow() = default;
@@ -49,7 +48,7 @@ void MainWindow::setupMenuBar()
     QAction* exitAction = fileMenu->addAction("E&xit");
     exitAction->setShortcut(QKeySequence::Quit);
     connect(exitAction, &QAction::triggered, this, &QWidget::close);
-    
+/*        
     // Background menu
     QMenu* backgroundMenu = menuBar()->addMenu("&Background");
     
@@ -60,17 +59,17 @@ void MainWindow::setupMenuBar()
     connect(m_extractBackgroundAction, &QAction::triggered, this, &MainWindow::onExtractBackground);
     
     backgroundMenu->addSeparator();
-    
+
     m_showBackgroundAction = backgroundMenu->addAction("Show Background &Model");
     m_showBackgroundAction->setShortcut(QKeySequence("Ctrl+M"));
     m_showBackgroundAction->setEnabled(false);
     connect(m_showBackgroundAction, &QAction::triggered, this, &MainWindow::onShowBackgroundModel);
-    
+
     m_applyBackgroundAction = backgroundMenu->addAction("&Apply Background Correction");
     m_applyBackgroundAction->setShortcut(QKeySequence("Ctrl+Shift+B"));
     m_applyBackgroundAction->setEnabled(false);
     connect(m_applyBackgroundAction, &QAction::triggered, this, &MainWindow::onApplyBackgroundCorrection);
-    
+*/    
     // Help menu
     QMenu* helpMenu = menuBar()->addMenu("&Help");
     
@@ -225,7 +224,7 @@ void MainWindow::loadImageFile(const QString& filePath)
         
         // Enable menu actions
         m_saveAsAction->setEnabled(true);
-        m_extractBackgroundAction->setEnabled(true);
+	//        m_extractBackgroundAction->setEnabled(true);
         
         logMessage(QString("✓ Loaded image: %1").arg(QFileInfo(filePath).fileName()));
         m_statusLabel->setText(QString("Image loaded: %1×%2×%3")
@@ -248,7 +247,6 @@ void MainWindow::loadImageFile(const QString& filePath)
         
         // Disable menu actions
         m_saveAsAction->setEnabled(false);
-        updateBackgroundMenuActions(false);
         
         m_statusLabel->setText("Ready - No image loaded");
     }
@@ -299,11 +297,9 @@ void MainWindow::onBackgroundExtracted(const BackgroundExtractionResult& result)
         }
         
         // Enable background-related menu actions
-        updateBackgroundMenuActions(true);
         
     } else {
         logMessage(QString("✗ Background extraction failed: %1").arg(result.errorMessage));
-        updateBackgroundMenuActions(false);
     }
 }
 
@@ -347,7 +343,7 @@ void MainWindow::onExtractBackground()
     
     logMessage("Switched to background extraction tab");
 }
-
+/*
 void MainWindow::onShowBackgroundModel()
 {
     if (!m_backgroundWidget || !m_backgroundWidget->hasResult()) {
@@ -366,7 +362,7 @@ void MainWindow::onShowBackgroundModel()
                                    originalImage.channels);
     }
 }
-
+*/
 void MainWindow::onApplyBackgroundCorrection()
 {
     if (!m_backgroundWidget || !m_backgroundWidget->hasResult()) {
@@ -402,48 +398,6 @@ void MainWindow::onApplyBackgroundCorrection()
         }
         // Cancel does nothing
     }
-}
-
-void MainWindow::updateBackgroundMenuActions(bool hasResult)
-{
-    m_showBackgroundAction->setEnabled(hasResult);
-    m_applyBackgroundAction->setEnabled(hasResult);
-    
-    logMessage(hasResult ? "Background extraction menu actions enabled" 
-                        : "Background extraction menu actions disabled");
-}
-
-void MainWindow::createBackgroundImageWindow(const QVector<float>& backgroundData, int width, int height, int channels)
-{
-    // Create a new image data structure for the background model
-    ImageData backgroundImageData;
-    backgroundImageData.width = width;
-    backgroundImageData.height = height;
-    backgroundImageData.channels = channels;
-    backgroundImageData.pixels = backgroundData;
-    backgroundImageData.format = "Background Model";
-    backgroundImageData.colorSpace = (channels == 1) ? "Grayscale" : "RGB";
-    backgroundImageData.metadata.append("Type: Extracted Background Model");
-    backgroundImageData.metadata.append(QString("Original Image: %1")
-                                       .arg(QFileInfo(m_currentFilePath).fileName()));
-    
-    // For now, just log that we would create a window
-    // In a full implementation, you might create a new MainWindow instance
-    // or a dedicated background model viewer window
-    logMessage("Background model window would be created here");
-    
-    // Alternative: Update current display temporarily
-    QString currentStatus = m_statusLabel->text();
-    m_imageDisplay->setImageData(backgroundImageData);
-    m_statusLabel->setText("Displaying background model - " + currentStatus);
-    
-    // You could add a timer to revert to original image after a few seconds
-    QTimer::singleShot(3000, [this]() {
-        if (m_imageReader->hasImage()) {
-            m_imageDisplay->setImageData(m_imageReader->imageData());
-            updateImageInfo();
-        }
-    });
 }
 
 void MainWindow::createCorrectedImageWindow(const QVector<float>& correctedData, int width, int height, int channels)

@@ -49,7 +49,6 @@ private slots:
     
     // Background extraction menu actions
     void onExtractBackground();
-    void onShowBackgroundModel();
     void onApplyBackgroundCorrection();
 
 private:
@@ -64,7 +63,6 @@ private:
     void logMessage(const QString& message);
     
     // Background extraction helper functions
-    void updateBackgroundMenuActions(bool hasResult);
     void createBackgroundImageWindow(const QVector<float>& backgroundData, int width, int height, int channels);
     void createCorrectedImageWindow(const QVector<float>& correctedData, int width, int height, int channels);
     
@@ -95,9 +93,6 @@ private:
     
     // Menu actions (for enabling/disabling)
     QAction* m_saveAsAction;
-    QAction* m_extractBackgroundAction;
-    QAction* m_showBackgroundAction;
-    QAction* m_applyBackgroundAction;
 };
 
 #endif // MAINWINDOW_H

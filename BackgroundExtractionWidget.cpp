@@ -35,6 +35,7 @@ BackgroundExtractionWidget::BackgroundExtractionWidget(QWidget* parent)
     
     // Load settings
     loadSettings();
+    setupChannelTab();
     updateUIFromParameters();
     enableControls(false); // Disable until image is loaded
 }
@@ -567,78 +568,6 @@ void BackgroundExtractionWidget::resetToDefaults()
     updateUIFromParameters();
 }
 
-void BackgroundExtractionWidget::updateUIFromParameters()
-{
-    BackgroundExtractionSettings settings = m_extractor->settings();
-    
-    // Block signals to avoid recursive updates
-    const bool blocked = signalsBlocked();
-    blockSignals(true);
-    
-    m_modelCombo->setCurrentIndex(m_modelCombo->findData(static_cast<int>(settings.model)));
-    m_sampleGenCombo->setCurrentIndex(m_sampleGenCombo->findData(static_cast<int>(settings.sampleGeneration)));
-    
-    m_toleranceSpin->setValue(settings.tolerance);
-    m_toleranceSlider->setValue(static_cast<int>(settings.tolerance * 100));
-    
-    m_deviationSpin->setValue(settings.deviation);
-    m_deviationSlider->setValue(static_cast<int>(settings.deviation * 100));
-    
-    m_minSamplesSpin->setValue(settings.minSamples);
-    m_maxSamplesSpin->setValue(settings.maxSamples);
-    
-    m_rejectionEnabledCheck->setChecked(settings.useOutlierRejection);
-    m_rejectionLowSpin->setValue(settings.rejectionLow);
-    m_rejectionHighSpin->setValue(settings.rejectionHigh);
-    m_rejectionIterSpin->setValue(settings.rejectionIterations);
-    
-    m_gridRowsSpin->setValue(settings.gridRows);
-    m_gridColumnsSpin->setValue(settings.gridColumns);
-    
-    m_discardModelCheck->setChecked(settings.discardModel);
-    m_replaceTargetCheck->setChecked(settings.replaceTarget);
-    m_normalizeOutputCheck->setChecked(settings.normalizeOutput);
-    m_maxErrorSpin->setValue(settings.maxError);
-    
-    // Update visibility based on sample generation method
-    m_gridGroup->setVisible(settings.sampleGeneration == SampleGeneration::Grid);
-    
-    // Update rejection controls state
-    bool rejectionEnabled = settings.useOutlierRejection;
-    m_rejectionLowSpin->setEnabled(rejectionEnabled);
-    m_rejectionHighSpin->setEnabled(rejectionEnabled);
-    m_rejectionIterSpin->setEnabled(rejectionEnabled);
-    m_rejectionLowLabel->setEnabled(rejectionEnabled);
-    m_rejectionHighLabel->setEnabled(rejectionEnabled);
-    m_rejectionIterLabel->setEnabled(rejectionEnabled);
-    
-    blockSignals(blocked);
-}
-
-void BackgroundExtractionWidget::updateParametersFromUI()
-{
-    BackgroundExtractionSettings settings = m_extractor->settings();
-    
-    settings.model = static_cast<BackgroundModel>(m_modelCombo->currentData().toInt());
-    settings.sampleGeneration = static_cast<SampleGeneration>(m_sampleGenCombo->currentData().toInt());
-    settings.tolerance = m_toleranceSpin->value();
-    settings.deviation = m_deviationSpin->value();
-    settings.minSamples = m_minSamplesSpin->value();
-    settings.maxSamples = m_maxSamplesSpin->value();
-    settings.useOutlierRejection = m_rejectionEnabledCheck->isChecked();
-    settings.rejectionLow = m_rejectionLowSpin->value();
-    settings.rejectionHigh = m_rejectionHighSpin->value();
-    settings.rejectionIterations = m_rejectionIterSpin->value();
-    settings.gridRows = m_gridRowsSpin->value();
-    settings.gridColumns = m_gridColumnsSpin->value();
-    settings.discardModel = m_discardModelCheck->isChecked();
-    settings.replaceTarget = m_replaceTargetCheck->isChecked();
-    settings.normalizeOutput = m_normalizeOutputCheck->isChecked();
-    settings.maxError = m_maxErrorSpin->value();
-    
-    m_extractor->setSettings(settings);
-}
-
 void BackgroundExtractionWidget::enableControls(bool enabled)
 {
     m_previewButton->setEnabled(enabled && !m_extractor->isExtracting());
@@ -1052,4 +981,758 @@ const BackgroundExtractionResult& BackgroundExtractionWidget::result() const
         return m_extractor->result();
     }
     return emptyResult;
+}
+
+void BackgroundExtractionWidget::setupChannelTab()
+{
+    m_channelTab = new QWidget;
+    auto* layout = new QVBoxLayout(m_channelTab);
+    
+    // Channel Mode Selection
+    m_channelModeGroup = new QGroupBox("Channel Processing Mode");
+    auto* modeLayout = new QGridLayout(m_channelModeGroup);
+    
+    m_channelModeLabel = new QLabel("Processing Mode:");
+    m_channelModeCombo = new QComboBox;
+    m_channelModeCombo->addItem("Combined (Original)", static_cast<int>(ChannelMode::Combined));
+    m_channelModeCombo->addItem("Per-Channel (Recommended)", static_cast<int>(ChannelMode::PerChannel));
+    m_channelModeCombo->addItem("Luminance Only", static_cast<int>(ChannelMode::LuminanceOnly));
+    
+    connect(m_channelModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &BackgroundExtractionWidget::onChannelModeChanged);
+    
+    modeLayout->addWidget(m_channelModeLabel, 0, 0);
+    modeLayout->addWidget(m_channelModeCombo, 0, 1);
+    
+    // Add explanatory text
+    auto* modeDescription = new QLabel(
+        "• Combined: Process all channels together (faster, less accurate)\n"
+        "• Per-Channel: Process each channel separately (slower, more accurate)\n"
+        "• Luminance Only: Extract from luminance, apply to all channels");
+    modeDescription->setWordWrap(true);
+    modeDescription->setStyleSheet("color: gray; font-size: 10px;");
+    modeLayout->addWidget(modeDescription, 1, 0, 1, 2);
+    
+    layout->addWidget(m_channelModeGroup);
+    
+    // Per-Channel Settings
+    m_perChannelGroup = new QGroupBox("Per-Channel Settings");
+    auto* perChannelLayout = new QVBoxLayout(m_perChannelGroup);
+    
+    m_perChannelSettingsCheck = new QCheckBox("Use different settings for each channel");
+    m_perChannelSettingsCheck->setToolTip("Enable to customize tolerance, deviation, and sample counts per channel");
+    connect(m_perChannelSettingsCheck, &QCheckBox::toggled,
+            this, &BackgroundExtractionWidget::onPerChannelSettingsToggled);
+    perChannelLayout->addWidget(m_perChannelSettingsCheck);
+    
+    // Channel settings table
+    m_channelSettingsTable = new QTableWidget(0, 5);
+    QStringList headers = {"Channel", "Tolerance", "Deviation", "Min Samples", "Max Samples"};
+    m_channelSettingsTable->setHorizontalHeaderLabels(headers);
+    m_channelSettingsTable->horizontalHeader()->setStretchLastSection(true);
+    m_channelSettingsTable->setAlternatingRowColors(true);
+    m_channelSettingsTable->setEnabled(false);
+    perChannelLayout->addWidget(m_channelSettingsTable);
+    
+    // Channel settings buttons
+    auto* channelButtonLayout = new QHBoxLayout;
+    m_copyToAllChannelsButton = new QPushButton("Copy to All Channels");
+    m_copyToAllChannelsButton->setEnabled(false);
+    m_resetChannelSettingsButton = new QPushButton("Reset Channel Settings");
+    m_resetChannelSettingsButton->setEnabled(false);
+    
+    channelButtonLayout->addWidget(m_copyToAllChannelsButton);
+    channelButtonLayout->addWidget(m_resetChannelSettingsButton);
+    channelButtonLayout->addStretch();
+    perChannelLayout->addLayout(channelButtonLayout);
+    
+    layout->addWidget(m_perChannelGroup);
+    
+    // Channel Weights (for luminance calculation)
+    m_channelWeightsGroup = new QGroupBox("Channel Weights");
+    auto* weightsLayout = new QVBoxLayout(m_channelWeightsGroup);
+    
+    m_channelWeightsLabel = new QLabel("Weights for luminance calculation:");
+    weightsLayout->addWidget(m_channelWeightsLabel);
+    
+    m_channelWeightsTable = new QTableWidget(1, 3);
+    QStringList weightHeaders = {"Red", "Green", "Blue"};
+    m_channelWeightsTable->setHorizontalHeaderLabels(weightHeaders);
+    m_channelWeightsTable->setVerticalHeaderLabels({"Weight"});
+    m_channelWeightsTable->horizontalHeader()->setStretchLastSection(true);
+    m_channelWeightsTable->setMaximumHeight(80);
+    
+    // Set default RGB weights
+    m_channelWeightsTable->setItem(0, 0, new QTableWidgetItem("0.299"));
+    m_channelWeightsTable->setItem(0, 1, new QTableWidgetItem("0.587"));
+    m_channelWeightsTable->setItem(0, 2, new QTableWidgetItem("0.114"));
+    
+    connect(m_channelWeightsTable, &QTableWidget::cellChanged,
+            this, &BackgroundExtractionWidget::onChannelWeightsChanged);
+    
+    weightsLayout->addWidget(m_channelWeightsTable);
+    
+    auto* weightsButtonLayout = new QHBoxLayout;
+    m_standardRGBWeightsButton = new QPushButton("Standard RGB");
+    m_standardRGBWeightsButton->setToolTip("Set to standard RGB to luminance weights (0.299, 0.587, 0.114)");
+    m_equalWeightsButton = new QPushButton("Equal Weights");
+    m_equalWeightsButton->setToolTip("Set equal weights for all channels (0.333, 0.333, 0.333)");
+    
+    connect(m_standardRGBWeightsButton, &QPushButton::clicked, [this]() {
+        m_channelWeightsTable->setItem(0, 0, new QTableWidgetItem("0.299"));
+        m_channelWeightsTable->setItem(0, 1, new QTableWidgetItem("0.587"));
+        m_channelWeightsTable->setItem(0, 2, new QTableWidgetItem("0.114"));
+        onChannelWeightsChanged();
+    });
+    
+    connect(m_equalWeightsButton, &QPushButton::clicked, [this]() {
+        m_channelWeightsTable->setItem(0, 0, new QTableWidgetItem("0.333"));
+        m_channelWeightsTable->setItem(0, 1, new QTableWidgetItem("0.333"));
+        m_channelWeightsTable->setItem(0, 2, new QTableWidgetItem("0.333"));
+        onChannelWeightsChanged();
+    });
+    
+    weightsButtonLayout->addWidget(m_standardRGBWeightsButton);
+    weightsButtonLayout->addWidget(m_equalWeightsButton);
+    weightsButtonLayout->addStretch();
+    weightsLayout->addLayout(weightsButtonLayout);
+    
+    layout->addWidget(m_channelWeightsGroup);
+    
+    // Channel Correlation Settings
+    m_correlationGroup = new QGroupBox("Channel Correlation");
+    auto* corrLayout = new QGridLayout(m_correlationGroup);
+    
+    m_useCorrelationCheck = new QCheckBox("Use channel correlation analysis");
+    m_useCorrelationCheck->setToolTip("Analyze correlations between channels to optimize processing");
+    m_useCorrelationCheck->setChecked(true);
+    connect(m_useCorrelationCheck, &QCheckBox::toggled,
+            this, &BackgroundExtractionWidget::onCorrelationSettingsChanged);
+    corrLayout->addWidget(m_useCorrelationCheck, 0, 0, 1, 2);
+    
+    m_correlationThresholdLabel = new QLabel("Correlation threshold:");
+    m_correlationThresholdSpin = new QDoubleSpinBox;
+    m_correlationThresholdSpin->setRange(CORRELATION_MIN, CORRELATION_MAX);
+    m_correlationThresholdSpin->setDecimals(2);
+    m_correlationThresholdSpin->setSingleStep(0.05);
+    m_correlationThresholdSpin->setValue(0.70);
+    m_correlationThresholdSpin->setToolTip("Threshold for considering channels correlated (0.7 = high correlation)");
+    connect(m_correlationThresholdSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &BackgroundExtractionWidget::onCorrelationSettingsChanged);
+    
+    corrLayout->addWidget(m_correlationThresholdLabel, 1, 0);
+    corrLayout->addWidget(m_correlationThresholdSpin, 1, 1);
+    
+    m_shareGoodSamplesCheck = new QCheckBox("Share good samples between correlated channels");
+    m_shareGoodSamplesCheck->setToolTip("Use good sample points from one channel in correlated channels");
+    m_shareGoodSamplesCheck->setChecked(true);
+    connect(m_shareGoodSamplesCheck, &QCheckBox::toggled,
+            this, &BackgroundExtractionWidget::onCorrelationSettingsChanged);
+    corrLayout->addWidget(m_shareGoodSamplesCheck, 2, 0, 1, 2);
+    
+    layout->addWidget(m_correlationGroup);
+    
+    // Channel Analysis
+    m_channelAnalysisGroup = new QGroupBox("Channel Analysis");
+    auto* analysisLayout = new QVBoxLayout(m_channelAnalysisGroup);
+    
+    m_analyzeChannelsButton = new QPushButton("Analyze Channels");
+    m_analyzeChannelsButton->setToolTip("Analyze channel characteristics and correlations");
+    m_analyzeChannelsButton->setEnabled(false);
+    connect(m_analyzeChannelsButton, &QPushButton::clicked,
+            this, &BackgroundExtractionWidget::onAnalyzeChannelsClicked);
+    analysisLayout->addWidget(m_analyzeChannelsButton);
+    
+    // Analysis results display
+    m_channelAnalysisText = new QTextEdit;
+    m_channelAnalysisText->setReadOnly(true);
+    m_channelAnalysisText->setMaximumHeight(120);
+    m_channelAnalysisText->setPlainText("Click 'Analyze Channels' to see channel characteristics and recommendations.");
+    analysisLayout->addWidget(m_channelAnalysisText);
+    
+    // Channel correlation matrix
+    auto* corrLabel = new QLabel("Channel Correlations:");
+    analysisLayout->addWidget(corrLabel);
+    
+    m_channelCorrelationTable = new QTableWidget(0, 0);
+    m_channelCorrelationTable->setMaximumHeight(100);
+    m_channelCorrelationTable->setAlternatingRowColors(true);
+    analysisLayout->addWidget(m_channelCorrelationTable);
+    
+    layout->addWidget(m_channelAnalysisGroup);
+    
+    layout->addStretch();
+}
+
+void BackgroundExtractionWidget::updateChannelSettings()
+{
+    if (!m_imageData) return;
+    
+    int channels = m_imageData->channels;
+    
+    // Update channel settings table
+    m_channelSettingsTable->setRowCount(channels);
+    
+    for (int ch = 0; ch < channels; ++ch) {
+        // Channel name
+        auto* channelItem = new QTableWidgetItem(QString("Channel %1").arg(ch));
+        channelItem->setFlags(channelItem->flags() & ~Qt::ItemIsEditable);
+        m_channelSettingsTable->setItem(ch, 0, channelItem);
+        
+        // Get current settings for this channel
+        BackgroundExtractionSettings settings = m_extractor->settings();
+        
+        double tolerance = settings.tolerance;
+        double deviation = settings.deviation;
+        int minSamples = settings.minSamples;
+        int maxSamples = settings.maxSamples;
+        
+        // Use per-channel settings if available
+        if (settings.usePerChannelSettings) {
+            if (ch < settings.channelTolerances.size()) tolerance = settings.channelTolerances[ch];
+            if (ch < settings.channelDeviations.size()) deviation = settings.channelDeviations[ch];
+            if (ch < settings.channelMinSamples.size()) minSamples = settings.channelMinSamples[ch];
+            if (ch < settings.channelMaxSamples.size()) maxSamples = settings.channelMaxSamples[ch];
+        }
+        
+        // Create editable controls
+        auto* toleranceItem = new QTableWidgetItem(QString::number(tolerance, 'f', 2));
+        auto* deviationItem = new QTableWidgetItem(QString::number(deviation, 'f', 2));
+        auto* minSamplesItem = new QTableWidgetItem(QString::number(minSamples));
+        auto* maxSamplesItem = new QTableWidgetItem(QString::number(maxSamples));
+        
+        m_channelSettingsTable->setItem(ch, 1, toleranceItem);
+        m_channelSettingsTable->setItem(ch, 2, deviationItem);
+        m_channelSettingsTable->setItem(ch, 3, minSamplesItem);
+        m_channelSettingsTable->setItem(ch, 4, maxSamplesItem);
+    }
+    
+    // Update channel weights table if needed
+    if (channels >= 3 && m_channelWeightsTable->columnCount() < channels) {
+        m_channelWeightsTable->setColumnCount(channels);
+        QStringList headers;
+        for (int ch = 0; ch < channels; ++ch) {
+            headers << QString("Ch%1").arg(ch);
+        }
+        m_channelWeightsTable->setHorizontalHeaderLabels(headers);
+        
+        // Set default weights
+        for (int ch = 0; ch < channels; ++ch) {
+            if (!m_channelWeightsTable->item(0, ch)) {
+                double weight = (ch < 3) ? QVector<double>{0.299, 0.587, 0.114}[ch] : (1.0 / channels);
+                m_channelWeightsTable->setItem(0, ch, new QTableWidgetItem(QString::number(weight, 'f', 3)));
+            }
+        }
+    }
+    
+    // Update active channel combo for manual sampling
+    m_activeChannelCombo->clear();
+    for (int ch = 0; ch < channels; ++ch) {
+        m_activeChannelCombo->addItem(QString("Channel %1").arg(ch), ch);
+    }
+    
+    // Update display channel combo
+    if (m_displayChannelCombo) {
+        m_displayChannelCombo->clear();
+        m_displayChannelCombo->addItem("All Channels", -1);
+        for (int ch = 0; ch < channels; ++ch) {
+            m_displayChannelCombo->addItem(QString("Channel %1").arg(ch), ch);
+        }
+    }
+    
+    // Enable analysis button
+    m_analyzeChannelsButton->setEnabled(true);
+}
+
+void BackgroundExtractionWidget::onChannelModeChanged()
+{
+    updateParametersFromUI();
+    
+    // Enable/disable relevant controls based on channel mode
+    ChannelMode mode = static_cast<ChannelMode>(m_channelModeCombo->currentData().toInt());
+    
+    bool perChannelMode = (mode == ChannelMode::PerChannel);
+    bool luminanceMode = (mode == ChannelMode::LuminanceOnly);
+    
+    // Enable per-channel settings only for per-channel mode
+    m_perChannelGroup->setEnabled(perChannelMode);
+    
+    // Enable channel weights for luminance mode
+    m_channelWeightsGroup->setEnabled(luminanceMode);
+    
+    // Update correlation group
+    m_correlationGroup->setEnabled(perChannelMode);
+    
+    // Update preview
+    m_updateTimer->start();
+}
+
+void BackgroundExtractionWidget::onPerChannelSettingsToggled(bool enabled)
+{
+    m_channelSettingsTable->setEnabled(enabled);
+    m_copyToAllChannelsButton->setEnabled(enabled);
+    m_resetChannelSettingsButton->setEnabled(enabled);
+    
+    updateParametersFromUI();
+}
+
+void BackgroundExtractionWidget::onChannelWeightsChanged()
+{
+    updateParametersFromUI();
+}
+
+void BackgroundExtractionWidget::onCorrelationSettingsChanged()
+{
+    updateParametersFromUI();
+}
+
+void BackgroundExtractionWidget::onAnalyzeChannelsClicked()
+{
+    if (!m_imageData || !m_imageData->isValid()) {
+        showError("No image loaded for analysis");
+        return;
+    }
+    
+    performChannelAnalysis();
+}
+
+void BackgroundExtractionWidget::performChannelAnalysis()
+{
+    if (!m_extractor || !m_imageData) return;
+    
+    m_analyzeChannelsButton->setEnabled(false);
+    m_analyzeChannelsButton->setText("Analyzing...");
+    
+    // Get channel analysis report
+    m_channelAnalysisReport = m_extractor->getChannelAnalysisReport(*m_imageData);
+    m_channelAnalysisText->setPlainText(m_channelAnalysisReport);
+    
+    // Get channel correlations
+    m_channelCorrelations = m_extractor->analyzeChannelCorrelations(*m_imageData);
+    displayChannelCorrelations();
+    
+    // Emit signal for other components
+    emit channelAnalysisComplete(m_channelAnalysisReport);
+    
+    m_analyzeChannelsButton->setEnabled(true);
+    m_analyzeChannelsButton->setText("Analyze Channels");
+    
+    // Update recommendations
+    updateChannelRecommendations();
+}
+
+void BackgroundExtractionWidget::displayChannelCorrelations()
+{
+    if (m_channelCorrelations.isEmpty() || !m_imageData) {
+        m_channelCorrelationTable->setRowCount(0);
+        m_channelCorrelationTable->setColumnCount(0);
+        return;
+    }
+    
+    int channels = m_imageData->channels;
+    if (channels < 2) return;
+    
+    // Create correlation matrix display
+    m_channelCorrelationTable->setRowCount(channels - 1);
+    m_channelCorrelationTable->setColumnCount(3);
+    
+    QStringList headers = {"Channel Pair", "Correlation", "Interpretation"};
+    m_channelCorrelationTable->setHorizontalHeaderLabels(headers);
+    
+    for (int i = 0; i < m_channelCorrelations.size(); ++i) {
+        double correlation = m_channelCorrelations[i];
+        
+        // Channel pair
+        auto* pairItem = new QTableWidgetItem(QString("Ch%1-Ch%2").arg(i).arg(i + 1));
+        pairItem->setFlags(pairItem->flags() & ~Qt::ItemIsEditable);
+        m_channelCorrelationTable->setItem(i, 0, pairItem);
+        
+        // Correlation value
+        auto* corrItem = new QTableWidgetItem(QString::number(correlation, 'f', 3));
+        corrItem->setFlags(corrItem->flags() & ~Qt::ItemIsEditable);
+        
+        // Color code based on correlation strength
+        if (std::abs(correlation) > 0.8) {
+            corrItem->setBackground(QColor(0, 255, 0, 100)); // Green for high correlation
+        } else if (std::abs(correlation) > 0.5) {
+            corrItem->setBackground(QColor(255, 255, 0, 100)); // Yellow for moderate
+        } else {
+            corrItem->setBackground(QColor(255, 0, 0, 100)); // Red for low correlation
+        }
+        
+        m_channelCorrelationTable->setItem(i, 1, corrItem);
+        
+        // Interpretation
+        QString interpretation;
+        if (std::abs(correlation) > 0.8) {
+            interpretation = "High correlation";
+        } else if (std::abs(correlation) > 0.5) {
+            interpretation = "Moderate correlation";
+        } else {
+            interpretation = "Low correlation";
+        }
+        
+        auto* interpItem = new QTableWidgetItem(interpretation);
+        interpItem->setFlags(interpItem->flags() & ~Qt::ItemIsEditable);
+        m_channelCorrelationTable->setItem(i, 2, interpItem);
+    }
+    
+    m_channelCorrelationTable->resizeColumnsToContents();
+}
+
+void BackgroundExtractionWidget::updateChannelRecommendations()
+{
+    if (!m_imageData || m_channelCorrelations.isEmpty()) return;
+    
+    // Calculate average correlation
+    double avgCorrelation = 0.0;
+    for (double corr : m_channelCorrelations) {
+        avgCorrelation += std::abs(corr);
+    }
+    avgCorrelation /= m_channelCorrelations.size();
+    
+    // Update UI based on analysis
+    if (avgCorrelation > 0.8) {
+        // High correlation - suggest combined or luminance-only processing
+        if (m_channelModeCombo->currentData().toInt() == static_cast<int>(ChannelMode::PerChannel)) {
+            // Show recommendation in status
+            m_statusLabel->setText("Recommendation: High channel correlation detected - consider Combined or Luminance-only mode");
+            m_statusLabel->setStyleSheet("color: orange;");
+        }
+        
+        // Disable sample sharing by default for high correlation
+        m_shareGoodSamplesCheck->setChecked(true);
+        
+    } else if (avgCorrelation < 0.3) {
+        // Low correlation - strongly recommend per-channel processing
+        if (m_channelModeCombo->currentData().toInt() != static_cast<int>(ChannelMode::PerChannel)) {
+            m_statusLabel->setText("Recommendation: Low channel correlation detected - Per-channel mode strongly recommended");
+            m_statusLabel->setStyleSheet("color: blue;");
+        }
+        
+        // Disable sample sharing for low correlation
+        m_shareGoodSamplesCheck->setChecked(false);
+        
+    } else {
+        // Moderate correlation - per-channel with sample sharing is good
+        m_statusLabel->setText("Channel correlation analysis complete");
+        m_statusLabel->setStyleSheet("");
+        m_shareGoodSamplesCheck->setChecked(true);
+    }
+}
+
+void BackgroundExtractionWidget::updateParametersFromUI()
+{
+    BackgroundExtractionSettings settings = m_extractor->settings();
+    
+    // Basic parameters (existing code)
+    settings.model = static_cast<BackgroundModel>(m_modelCombo->currentData().toInt());
+    settings.sampleGeneration = static_cast<SampleGeneration>(m_sampleGenCombo->currentData().toInt());
+    settings.tolerance = m_toleranceSpin->value();
+    settings.deviation = m_deviationSpin->value();
+    settings.minSamples = m_minSamplesSpin->value();
+    settings.maxSamples = m_maxSamplesSpin->value();
+    settings.useOutlierRejection = m_rejectionEnabledCheck->isChecked();
+    settings.rejectionLow = m_rejectionLowSpin->value();
+    settings.rejectionHigh = m_rejectionHighSpin->value();
+    settings.rejectionIterations = m_rejectionIterSpin->value();
+    settings.gridRows = m_gridRowsSpin->value();
+    settings.gridColumns = m_gridColumnsSpin->value();
+    settings.discardModel = m_discardModelCheck->isChecked();
+    settings.replaceTarget = m_replaceTargetCheck->isChecked();
+    settings.normalizeOutput = m_normalizeOutputCheck->isChecked();
+    settings.maxError = m_maxErrorSpin->value();
+    
+    // NEW: Channel-specific parameters
+    if (m_channelModeCombo) {
+        settings.channelMode = static_cast<ChannelMode>(m_channelModeCombo->currentData().toInt());
+    }
+    
+    // Per-channel settings
+    settings.usePerChannelSettings = m_perChannelSettingsCheck->isChecked();
+    
+    if (settings.usePerChannelSettings && m_imageData) {
+        int channels = m_imageData->channels;
+        settings.channelTolerances.clear();
+        settings.channelDeviations.clear();
+        settings.channelMinSamples.clear();
+        settings.channelMaxSamples.clear();
+        
+        for (int ch = 0; ch < channels; ++ch) {
+            if (ch < m_channelSettingsTable->rowCount()) {
+                auto* toleranceItem = m_channelSettingsTable->item(ch, 1);
+                auto* deviationItem = m_channelSettingsTable->item(ch, 2);
+                auto* minSamplesItem = m_channelSettingsTable->item(ch, 3);
+                auto* maxSamplesItem = m_channelSettingsTable->item(ch, 4);
+                
+                if (toleranceItem) settings.channelTolerances.append(toleranceItem->text().toDouble());
+                if (deviationItem) settings.channelDeviations.append(deviationItem->text().toDouble());
+                if (minSamplesItem) settings.channelMinSamples.append(minSamplesItem->text().toInt());
+                if (maxSamplesItem) settings.channelMaxSamples.append(maxSamplesItem->text().toInt());
+            }
+        }
+    }
+    
+    // Channel weights
+    settings.channelWeights.clear();
+    if (m_channelWeightsTable && m_imageData) {
+        int channels = std::min(m_imageData->channels, m_channelWeightsTable->columnCount());
+        for (int ch = 0; ch < channels; ++ch) {
+            auto* weightItem = m_channelWeightsTable->item(0, ch);
+            if (weightItem) {
+                settings.channelWeights.append(weightItem->text().toDouble());
+            } else {
+                settings.channelWeights.append(1.0 / channels); // Equal weights fallback
+            }
+        }
+    }
+    
+    // Correlation settings
+    settings.useChannelCorrelation = m_useCorrelationCheck->isChecked();
+    settings.correlationThreshold = m_correlationThresholdSpin->value();
+    settings.shareGoodSamples = m_shareGoodSamplesCheck->isChecked();
+    
+    m_extractor->setSettings(settings);
+}
+
+void BackgroundExtractionWidget::updateUIFromParameters()
+{
+    BackgroundExtractionSettings settings = m_extractor->settings();
+    
+    // Block signals to avoid recursive updates
+    const bool blocked = signalsBlocked();
+    blockSignals(true);
+    
+    // Basic parameters (existing code)
+    m_modelCombo->setCurrentIndex(m_modelCombo->findData(static_cast<int>(settings.model)));
+    m_sampleGenCombo->setCurrentIndex(m_sampleGenCombo->findData(static_cast<int>(settings.sampleGeneration)));
+    
+    m_toleranceSpin->setValue(settings.tolerance);
+    m_toleranceSlider->setValue(static_cast<int>(settings.tolerance * 100));
+    
+    m_deviationSpin->setValue(settings.deviation);
+    m_deviationSlider->setValue(static_cast<int>(settings.deviation * 100));
+    
+    m_minSamplesSpin->setValue(settings.minSamples);
+    m_maxSamplesSpin->setValue(settings.maxSamples);
+    
+    m_rejectionEnabledCheck->setChecked(settings.useOutlierRejection);
+    m_rejectionLowSpin->setValue(settings.rejectionLow);
+    m_rejectionHighSpin->setValue(settings.rejectionHigh);
+    m_rejectionIterSpin->setValue(settings.rejectionIterations);
+    
+    m_gridRowsSpin->setValue(settings.gridRows);
+    m_gridColumnsSpin->setValue(settings.gridColumns);
+    
+    m_discardModelCheck->setChecked(settings.discardModel);
+    m_replaceTargetCheck->setChecked(settings.replaceTarget);
+    m_normalizeOutputCheck->setChecked(settings.normalizeOutput);
+    m_maxErrorSpin->setValue(settings.maxError);
+    
+    // NEW: Channel-specific UI updates
+    if (m_channelModeCombo) {
+        m_channelModeCombo->setCurrentIndex(m_channelModeCombo->findData(static_cast<int>(settings.channelMode)));
+    }
+    
+    m_perChannelSettingsCheck->setChecked(settings.usePerChannelSettings);
+    
+    // Update channel weights
+    if (!settings.channelWeights.isEmpty()) {
+      for (int ch = 0; ch < std::min((int)settings.channelWeights.size(), (int)m_channelWeightsTable->columnCount()); ++ch) {
+            m_channelWeightsTable->setItem(0, ch, new QTableWidgetItem(QString::number(settings.channelWeights[ch], 'f', 3)));
+        }
+    }
+    
+    // Correlation settings
+    m_useCorrelationCheck->setChecked(settings.useChannelCorrelation);
+    m_correlationThresholdSpin->setValue(settings.correlationThreshold);
+    m_shareGoodSamplesCheck->setChecked(settings.shareGoodSamples);
+    
+    // Update visibility based on sample generation method
+    m_gridGroup->setVisible(settings.sampleGeneration == SampleGeneration::Grid);
+    
+    // Update rejection controls state
+    bool rejectionEnabled = settings.useOutlierRejection;
+    m_rejectionLowSpin->setEnabled(rejectionEnabled);
+    m_rejectionHighSpin->setEnabled(rejectionEnabled);
+    m_rejectionIterSpin->setEnabled(rejectionEnabled);
+    m_rejectionLowLabel->setEnabled(rejectionEnabled);
+    m_rejectionHighLabel->setEnabled(rejectionEnabled);
+    m_rejectionIterLabel->setEnabled(rejectionEnabled);
+    
+    // Update channel mode dependent controls
+    ChannelMode mode = settings.channelMode;
+    bool perChannelMode = (mode == ChannelMode::PerChannel);
+    bool luminanceMode = (mode == ChannelMode::LuminanceOnly);
+    
+    m_perChannelGroup->setEnabled(perChannelMode);
+    m_channelWeightsGroup->setEnabled(luminanceMode);
+    m_correlationGroup->setEnabled(perChannelMode);
+    
+    blockSignals(blocked);
+}
+
+void BackgroundExtractionWidget::updateChannelResults()
+{
+    if (!m_extractor->hasResult()) {
+        m_channelResultsTree->clear();
+        m_channelComparisonTable->setRowCount(0);
+        return;
+    }
+    
+    const BackgroundExtractionResult& result = m_extractor->result();
+    
+    // Update channel results tree
+    m_channelResultsTree->clear();
+    
+    // Create root items for different result categories
+    auto* overallItem = new QTreeWidgetItem(m_channelResultsTree, {"Overall Results"});
+    auto* channelItem = new QTreeWidgetItem(m_channelResultsTree, {"Per-Channel Results"});
+    auto* correlationItem = new QTreeWidgetItem(m_channelResultsTree, {"Channel Correlations"});
+    
+    // Overall results
+    overallItem->addChild(new QTreeWidgetItem({"Processing Mode", 
+        result.usedChannelMode == ChannelMode::PerChannel ? "Per-Channel" :
+        result.usedChannelMode == ChannelMode::LuminanceOnly ? "Luminance Only" : "Combined"}));
+    overallItem->addChild(new QTreeWidgetItem({"Total Samples", QString::number(result.totalSamplesUsed)}));
+    overallItem->addChild(new QTreeWidgetItem({"Overall RMS Error", QString::number(result.overallRmsError, 'f', 6)}));
+    overallItem->addChild(new QTreeWidgetItem({"Processing Time", QString("%1 s").arg(result.processingTimeSeconds, 0, 'f', 2)}));
+    
+    // Per-channel results
+    for (int ch = 0; ch < result.channelResults.size(); ++ch) {
+        const ChannelResult& chResult = result.channelResults[ch];
+        
+        auto* chItem = new QTreeWidgetItem(channelItem, {QString("Channel %1").arg(ch)});
+        
+        if (chResult.success) {
+            chItem->addChild(new QTreeWidgetItem({"Success", "Yes"}));
+            chItem->addChild(new QTreeWidgetItem({"Samples Used", QString::number(chResult.samplesUsed)}));
+            chItem->addChild(new QTreeWidgetItem({"RMS Error", QString::number(chResult.rmsError, 'f', 6)}));
+            chItem->addChild(new QTreeWidgetItem({"Background Level", QString::number(chResult.backgroundLevel, 'f', 6)}));
+            chItem->addChild(new QTreeWidgetItem({"Gradient Strength", QString::number(chResult.gradientStrength, 'f', 6)}));
+            chItem->addChild(new QTreeWidgetItem({"Processing Time", QString("%1 s").arg(chResult.processingTimeSeconds, 0, 'f', 2)}));
+        } else {
+            chItem->addChild(new QTreeWidgetItem({"Success", "No"}));
+            chItem->addChild(new QTreeWidgetItem({"Error", chResult.errorMessage}));
+        }
+    }
+    
+    // Channel correlations
+    for (int i = 0; i < result.channelCorrelations.size(); ++i) {
+        correlationItem->addChild(new QTreeWidgetItem({
+            QString("Ch%1-Ch%2").arg(i).arg(i + 1),
+            QString::number(result.channelCorrelations[i], 'f', 3)
+        }));
+    }
+    
+    // Expand all items
+    m_channelResultsTree->expandAll();
+    
+    // Update channel comparison table
+    updateChannelComparisonTable();
+}
+
+void BackgroundExtractionWidget::updateChannelComparisonTable()
+{
+    if (!m_extractor->hasResult()) return;
+    
+    const BackgroundExtractionResult& result = m_extractor->result();
+    int channels = result.channelResults.size();
+    
+    if (channels == 0) return;
+    
+    m_channelComparisonTable->setRowCount(channels);
+    m_channelComparisonTable->setColumnCount(7);
+    
+    QStringList headers = {"Channel", "Success", "Samples", "RMS Error", "Background", "Gradient", "Time (s)"};
+    m_channelComparisonTable->setHorizontalHeaderLabels(headers);
+    
+    for (int ch = 0; ch < channels; ++ch) {
+        const ChannelResult& chResult = result.channelResults[ch];
+        
+        m_channelComparisonTable->setItem(ch, 0, new QTableWidgetItem(QString("Channel %1").arg(ch)));
+        m_channelComparisonTable->setItem(ch, 1, new QTableWidgetItem(chResult.success ? "Yes" : "No"));
+        
+        if (chResult.success) {
+            m_channelComparisonTable->setItem(ch, 2, new QTableWidgetItem(QString::number(chResult.samplesUsed)));
+            m_channelComparisonTable->setItem(ch, 3, new QTableWidgetItem(QString::number(chResult.rmsError, 'f', 6)));
+            m_channelComparisonTable->setItem(ch, 4, new QTableWidgetItem(QString::number(chResult.backgroundLevel, 'f', 6)));
+            m_channelComparisonTable->setItem(ch, 5, new QTableWidgetItem(QString::number(chResult.gradientStrength, 'f', 6)));
+            m_channelComparisonTable->setItem(ch, 6, new QTableWidgetItem(QString::number(chResult.processingTimeSeconds, 'f', 2)));
+            
+            // Color code based on success and quality
+            QColor bgColor = Qt::white;
+            if (chResult.rmsError < 0.001) {
+                bgColor = QColor(0, 255, 0, 100); // Green for excellent
+            } else if (chResult.rmsError < 0.01) {
+                bgColor = QColor(255, 255, 0, 100); // Yellow for good
+            } else {
+                bgColor = QColor(255, 200, 200, 100); // Light red for poor
+            }
+            
+            for (int col = 0; col < 7; ++col) {
+                if (m_channelComparisonTable->item(ch, col)) {
+                    m_channelComparisonTable->item(ch, col)->setBackground(bgColor);
+                }
+            }
+        } else {
+            // Mark failed channels
+            for (int col = 2; col < 7; ++col) {
+                m_channelComparisonTable->setItem(ch, col, new QTableWidgetItem("Failed"));
+            }
+            
+            for (int col = 0; col < 7; ++col) {
+                if (m_channelComparisonTable->item(ch, col)) {
+                    m_channelComparisonTable->item(ch, col)->setBackground(QColor(255, 0, 0, 100));
+                }
+            }
+        }
+    }
+    
+    m_channelComparisonTable->resizeColumnsToContents();
+}
+
+// Per-channel progress handling
+void BackgroundExtractionWidget::onChannelProgress(int channel, int percentage, const QString& message)
+{
+    // Update per-channel progress table if it exists
+    if (m_channelProgressTable && channel < m_channelProgressTable->rowCount()) {
+        auto* progressItem = m_channelProgressTable->item(channel, 1);
+        if (progressItem) {
+            progressItem->setText(QString("%1%").arg(percentage));
+        }
+        
+        auto* statusItem = m_channelProgressTable->item(channel, 2);
+        if (statusItem) {
+            statusItem->setText(message);
+        }
+    }
+    
+    // Update overall status
+    m_statusLabel->setText(QString("Channel %1: %2").arg(channel).arg(message));
+}
+
+void BackgroundExtractionWidget::onChannelCompleted(int channel, const ChannelResult& result)
+{
+    // Update progress table
+    if (m_channelProgressTable && channel < m_channelProgressTable->rowCount()) {
+        auto* progressItem = m_channelProgressTable->item(channel, 1);
+        if (progressItem) {
+            progressItem->setText("100%");
+        }
+        
+        auto* statusItem = m_channelProgressTable->item(channel, 2);
+        if (statusItem) {
+            statusItem->setText(result.success ? "Completed" : "Failed");
+            statusItem->setBackground(result.success ? QColor(0, 255, 0, 100) : QColor(255, 0, 0, 100));
+        }
+    }
+    
+    // Emit channel-specific signals
+    if (result.success) {
+        if (m_imageData) {
+            emit channelBackgroundReady(channel, result.backgroundData, m_imageData->width, m_imageData->height);
+            emit channelCorrectedReady(channel, result.correctedData, m_imageData->width, m_imageData->height);
+        }
+    }
 }

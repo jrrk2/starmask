@@ -45,7 +45,7 @@ HardenedBackgroundExtractor::HardenedBackgroundExtractor(QObject* parent)
     : BackgroundExtractor(parent)
     , d_advanced(std::make_unique<AdvancedBackgroundExtractorPrivate>())
 {
-    d_advanced->advancedSettings = getDeepSkySettings();
+    d_advanced->advancedSettings = getDeepSkyGradientSettings();
 }
 
 HardenedBackgroundExtractor::~HardenedBackgroundExtractor() = default;
@@ -75,18 +75,18 @@ HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtrac
     return d_advanced->advancedSettings;
 }
 
-bool HardenedBackgroundExtractor::extractBackgroundWithPCL(const ImageData& imageData)
+bool HardenedBackgroundExtractor::extractBackgroundWithGradients(const ImageData& imageData)
 {
     if (!imageData.isValid()) {
         return false;
     }
     
     emit extractionStarted();
-    emit advancedProgressUpdate("Initializing PCL-based extraction", 5, "Converting image data");
+    emit gradientProgressUpdate("Initializing gradient-based extraction", 5, "Converting image data");
     
     try {
-        // Convert to PCL image format
-        pcl::Image pclImage = convertTopcl::Image(imageData);
+        // Convert to PCL image format - FIXED METHOD NAME
+        pcl::Image pclImage = convertToPCLImage(imageData);
         
         // Choose extraction method based on advanced model
         pcl::DImage backgroundModel;
@@ -96,21 +96,18 @@ bool HardenedBackgroundExtractor::extractBackgroundWithPCL(const ImageData& imag
         case AdvancedModel::MultiscaleMedian:
             success = processMultiscaleExtraction(pclImage, backgroundModel);
             break;
-        case AdvancedModel::SurfaceSpline:
-            success = processSurfaceSplineExtraction(pclImage, backgroundModel);
-            break;
         case AdvancedModel::GradientDomain:
             success = processGradientDomainExtraction(pclImage, backgroundModel);
             break;
-        case AdvancedModel::WaveletTransform:
-            success = processWaveletExtraction(pclImage, backgroundModel);
+        case AdvancedModel::HDRCompression:
+            success = processHDRCompressionExtraction(pclImage, backgroundModel);
             break;
-        case AdvancedModel::HybridApproach:
+        case AdvancedModel::HybridGradient:
             success = processHybridExtraction(pclImage, backgroundModel);
             break;
         default:
             // Fall back to base class implementation
-            return extractBackground(imageData);
+            return extractBackgroundAsync(imageData);
         }
         
         if (success) {
@@ -132,29 +129,39 @@ bool HardenedBackgroundExtractor::extractBackgroundWithPCL(const ImageData& imag
             newResult.processingTimeSeconds = 0.0; // Would be set by timer
             
             // Quality assessment
-            d_advanced->lastQualityScore = assessBackgroundQuality(backgroundData, imageData.pixels);
+            d_advanced->lastQualityScore = assessGradientBackgroundQuality(backgroundData, imageData.pixels);
             
-            emit extractionFinished(true);
+            emit extractionFinished(true, "Success");
             return true;
         }
         
     } catch (const pcl::Error& e) {
-        qDebug() << "PCL Error in advanced extraction:" << e.Message().c_str();
-        emit extractionFinished(false);
+        qDebug() << "PCL Error in gradient extraction:" << e.Message().c_str();
+        emit extractionFinished(false, QString("PCL Error: %1").arg(e.Message().c_str()));
         return false;
     } catch (const std::exception& e) {
-        qDebug() << "Standard error in advanced extraction:" << e.what();
-        emit extractionFinished(false);
+        qDebug() << "Standard error in gradient extraction:" << e.what();
+        emit extractionFinished(false, QString("Error: %1").arg(e.what()));
         return false;
     }
     
-    emit extractionFinished(false);
+    emit extractionFinished(false, "Unknown error");
     return false;
+}
+
+bool HardenedBackgroundExtractor::extractBackgroundWithHDRCompression(const ImageData& imageData)
+{
+    return extractBackgroundWithGradients(imageData); // Delegate to main method
+}
+
+bool HardenedBackgroundExtractor::extractBackgroundWithMultiscale(const ImageData& imageData)
+{
+    return extractBackgroundWithGradients(imageData); // Delegate to main method
 }
 
 bool HardenedBackgroundExtractor::processMultiscaleExtraction(const pcl::Image& image, pcl::DImage& backgroundModel)
 {
-    emit advancedProgressUpdate("Multiscale extraction", 20, "Performing multiscale median transform");
+    emit gradientProgressUpdate("Multiscale extraction", 20, "Performing multiscale median transform");
     
     try {
         // Create MultiscaleMedianTransform instance
@@ -168,7 +175,7 @@ bool HardenedBackgroundExtractor::processMultiscaleExtraction(const pcl::Image& 
         pcl::ImageVariant transformedImage;
         transformedImage = pcl::ImageVariant(&image);
         
-        emit advancedProgressUpdate("Multiscale extraction", 40, "Analyzing scale layers");
+        emit gradientProgressUpdate("Multiscale extraction", 40, "Analyzing scale layers");
         
         // Execute the transform
         bool success = mmt.ExecuteOn(transformedImage);
@@ -185,7 +192,7 @@ bool HardenedBackgroundExtractor::processMultiscaleExtraction(const pcl::Image& 
             pcl::ImageVariant backgroundVariant(&backgroundModel);
             gaussianFilter.ExecuteOn(backgroundVariant);
             
-            emit advancedProgressUpdate("Multiscale extraction", 80, "Refining background model");
+            emit gradientProgressUpdate("Multiscale extraction", 80, "Refining background model");
             
             return true;
         }
@@ -198,112 +205,22 @@ bool HardenedBackgroundExtractor::processMultiscaleExtraction(const pcl::Image& 
     return false;
 }
 
-bool HardenedBackgroundExtractor::processSurfaceSplineExtraction(const pcl::Image& image, pcl::DImage& backgroundModel)
-{
-    emit advancedProgressUpdate("Surface spline extraction", 20, "Generating sample points");
-    
-    try {
-        // Generate samples using advanced methods
-        ImageData tempImageData = convertFromPCLImage(image);
-        QVector<QPoint> samples;
-        
-        switch (d_advanced->advancedSettings.advancedSampling) {
-        case AdvancedSampling::MultiscaleDetection:
-            samples = generateMultiscaleSamples(tempImageData);
-            break;
-        case AdvancedSampling::MorphologicalMask:
-            samples = generateMorphologicalSamples(tempImageData);
-            break;
-        case AdvancedSampling::AdaptiveGrid:
-            samples = generateAdaptiveGridSamples(tempImageData);
-            break;
-        default:
-            // Fall back to base class sample generation
-            return false;
-        }
-        
-        if (samples.size() < d_advanced->advancedSettings.minSamples) {
-            qDebug() << "Insufficient samples for surface spline:" << samples.size();
-            return false;
-        }
-        
-        emit advancedProgressUpdate("Surface spline extraction", 40, "Creating surface spline model");
-        
-        // Create surface spline interpolation
-        pcl::SurfaceSpline<pcl::RBFType::ThinPlateSpline> spline;
-        
-        // Set spline parameters
-        spline.SetSmoothing(d_advanced->advancedSettings.smoothingFactor);
-        spline.SetOrder(d_advanced->advancedSettings.splineOrder);
-        
-        // Prepare sample data for spline fitting
-        pcl::SurfaceSpline<pcl::RBFType::ThinPlateSpline>::vector_list samplePoints;
-        pcl::Vector sampleValues;
-        
-        for (const QPoint& point : samples) {
-            if (point.x() >= 0 && point.x() < image.Width() && 
-                point.y() >= 0 && point.y() < image.Height()) {
-                
-                pcl::DVector samplePoint(2);
-                samplePoint[0] = double(point.x()) / image.Width();   // Normalize to [0,1]
-                samplePoint[1] = double(point.y()) / image.Height();  // Normalize to [0,1]
-                samplePoints.Add(samplePoint);
-                
-                // Get sample value (assuming single channel for now)
-                double sampleValue = image.Pixel(point.x(), point.y(), 0);
-                sampleValues.Add(sampleValue);
-            }
-        }
-        
-        emit advancedProgressUpdate("Surface spline extraction", 60, "Fitting spline surface");
-        
-        // Initialize and fit the spline
-        spline.Initialize(samplePoints, sampleValues);
-        
-        // Generate background model by evaluating spline at each pixel
-        backgroundModel.AllocateData(image.Width(), image.Height(), image.NumberOfChannels());
-        
-        emit advancedProgressUpdate("Surface spline extraction", 80, "Evaluating background model");
-        
-        for (int y = 0; y < image.Height(); ++y) {
-            for (int x = 0; x < image.Width(); ++x) {
-                pcl::DVector evalPoint(2);
-                evalPoint[0] = double(x) / image.Width();
-                evalPoint[1] = double(y) / image.Height();
-                
-                double backgroundValue = spline(evalPoint);
-                
-                // Apply to all channels
-                for (int c = 0; c < image.NumberOfChannels(); ++c) {
-                    backgroundModel.Pixel(x, y, c) = backgroundValue;
-                }
-            }
-        }
-        
-        return true;
-        
-    } catch (const pcl::Error& e) {
-        qDebug() << "PCL Error in surface spline extraction:" << e.Message().c_str();
-        return false;
-    }
-    
-    return false;
-}
-
 bool HardenedBackgroundExtractor::processGradientDomainExtraction(const pcl::Image& image, pcl::DImage& backgroundModel)
 {
-    emit advancedProgressUpdate("Gradient domain extraction", 20, "Initializing gradient domain processing");
+    emit gradientProgressUpdate("Gradient domain extraction", 20, "Initializing gradient domain processing");
     
     try {
         // Use the existing GradientsHdrCompression from the module
-        d_advanced->gradientCompressor->hdrCompressionSetImage(
-            reinterpret_cast<const GradientsBase::imageType_t&>(image));
+        GradientsBase::imageType_t gradientImage;
+        gradientImage = reinterpret_cast<const GradientsBase::imageType_t&>(image);
         
-        emit advancedProgressUpdate("Gradient domain extraction", 40, "Analyzing gradient field");
+        d_advanced->gradientCompressor->hdrCompressionSetImage(gradientImage);
+        
+        emit gradientProgressUpdate("Gradient domain extraction", 40, "Analyzing gradient field");
         
         // Configure gradient compression parameters
-        double maxGradient = d_advanced->advancedSettings.maxGradient;
-        double minGradient = d_advanced->advancedSettings.minGradient;
+        double maxGradient = d_advanced->advancedSettings.logMaxGradient;
+        double minGradient = d_advanced->advancedSettings.logMinGradient;
         double expGradient = d_advanced->advancedSettings.expGradient;
         
         // Apply gradient domain processing
@@ -311,7 +228,7 @@ bool HardenedBackgroundExtractor::processGradientDomainExtraction(const pcl::Ima
         d_advanced->gradientCompressor->hdrCompression(
             maxGradient, minGradient, expGradient, false, resultImage);
         
-        emit advancedProgressUpdate("Gradient domain extraction", 60, "Extracting background component");
+        emit gradientProgressUpdate("Gradient domain extraction", 60, "Extracting background component");
         
         // The result contains the compressed dynamic range
         // We need to extract the background component from this
@@ -324,7 +241,7 @@ bool HardenedBackgroundExtractor::processGradientDomainExtraction(const pcl::Ima
         pcl::ImageVariant backgroundVariant(&backgroundModel);
         medianFilter.ExecuteOn(backgroundVariant);
         
-        emit advancedProgressUpdate("Gradient domain extraction", 80, "Refining gradient-based model");
+        emit gradientProgressUpdate("Gradient domain extraction", 80, "Refining gradient-based model");
         
         return true;
         
@@ -336,33 +253,133 @@ bool HardenedBackgroundExtractor::processGradientDomainExtraction(const pcl::Ima
     return false;
 }
 
-QVector<QPoint> HardenedBackgroundExtractor::generateMultiscaleSamples(const ImageData& imageData)
+bool HardenedBackgroundExtractor::processHDRCompressionExtraction(const pcl::Image& image, pcl::DImage& backgroundModel)
+{
+    emit gradientProgressUpdate("HDR compression extraction", 20, "Setting up HDR compression");
+    
+    try {
+        // Convert input image to gradient domain format
+        GradientsBase::imageType_t gradientImage;
+        gradientImage = reinterpret_cast<const GradientsBase::imageType_t&>(image);
+        
+        // Configure HDR compression parameters
+        double logMaxGradient = d_advanced->advancedSettings.logMaxGradient;
+        double logMinGradient = d_advanced->advancedSettings.logMinGradient;
+        double expGradient = d_advanced->advancedSettings.expGradient;
+        bool rescale01 = d_advanced->advancedSettings.rescale01;
+        
+        emit gradientProgressUpdate("HDR compression extraction", 50, "Applying HDR compression");
+        
+        // Apply HDR compression
+        GradientsBase::imageType_t compressedImage;
+        d_advanced->gradientCompressor->hdrCompressionSetImage(gradientImage);
+        d_advanced->gradientCompressor->hdrCompression(
+            logMaxGradient, logMinGradient, expGradient, rescale01, compressedImage);
+        
+        // Convert result back to PCL DImage
+        backgroundModel.Assign(reinterpret_cast<const pcl::DImage&>(compressedImage));
+        
+        emit gradientProgressUpdate("HDR compression extraction", 80, "Finalizing HDR background model");
+        
+        return true;
+        
+    } catch (const pcl::Error& e) {
+        qDebug() << "PCL Error in HDR compression extraction:" << e.Message().c_str();
+        return false;
+    }
+    
+    return false;
+}
+
+bool HardenedBackgroundExtractor::processHybridExtraction(const pcl::Image& image, pcl::DImage& backgroundModel)
+{
+    emit gradientProgressUpdate("Hybrid extraction", 10, "Starting hybrid approach");
+    
+    // First try multiscale approach
+    bool multiscaleSuccess = processMultiscaleExtraction(image, backgroundModel);
+    
+    if (multiscaleSuccess) {
+        emit gradientProgressUpdate("Hybrid extraction", 60, "Refining with gradient domain");
+        
+        // Refine with gradient domain processing
+        pcl::DImage refinedModel;
+        bool gradientSuccess = processGradientDomainExtraction(image, refinedModel);
+        
+        if (gradientSuccess) {
+            // Combine both results (simple average for now)
+            for (int y = 0; y < backgroundModel.Height(); ++y) {
+                for (int x = 0; x < backgroundModel.Width(); ++x) {
+                    for (int c = 0; c < backgroundModel.NumberOfChannels(); ++c) {
+                        double multiscaleValue = backgroundModel.Pixel(x, y, c);
+                        double gradientValue = refinedModel.Pixel(x, y, c);
+                        backgroundModel.Pixel(x, y, c) = (multiscaleValue + gradientValue) * 0.5;
+                    }
+                }
+            }
+        }
+        
+        emit gradientProgressUpdate("Hybrid extraction", 100, "Hybrid extraction complete");
+        return true;
+    }
+    
+    return false;
+}
+
+QVector<QPoint> HardenedBackgroundExtractor::generateGradientBasedSamples(const ImageData& imageData)
+{
+    return generateLowGradientSamples(imageData);
+}
+
+QVector<QPoint> HardenedBackgroundExtractor::generateLowGradientSamples(const ImageData& imageData)
 {
     QVector<QPoint> samples;
     
     try {
-        // Convert to PCL format for processing
-        pcl::Image pclImage = convertTopcl::Image(imageData);
+        // Convert to PCL format for processing - FIXED METHOD CALL
+        pcl::Image pclImage = convertToPCLImage(imageData);
         
-        // Create multiscale decomposition to identify background regions
-        pcl::MultiscaleMedianTransform mmt;
-        mmt.SetNumberOfLayers(4);  // Use fewer layers for sample detection
+        // Create gradient analysis to identify low-gradient regions
+        pcl::DImage dxImage, dyImage;
         
-        pcl::ImageVariant imageVariant(&pclImage);
-        mmt.ExecuteOn(imageVariant);
+        // Simple gradient calculation (Sobel-like)
+        dxImage.AllocateData(pclImage.Width(), pclImage.Height(), pclImage.NumberOfChannels());
+        dyImage.AllocateData(pclImage.Width(), pclImage.Height(), pclImage.NumberOfChannels());
         
-        // Analyze the decomposition to find stable background regions
-        // Look for areas with low variation across scales
+        // Calculate gradients
+        for (int c = 0; c < pclImage.NumberOfChannels(); ++c) {
+            for (int y = 1; y < pclImage.Height() - 1; ++y) {
+                for (int x = 1; x < pclImage.Width() - 1; ++x) {
+                    // X gradient (Sobel)
+                    double gx = pclImage.Pixel(x+1, y-1, c) + 2*pclImage.Pixel(x+1, y, c) + pclImage.Pixel(x+1, y+1, c) -
+                               pclImage.Pixel(x-1, y-1, c) - 2*pclImage.Pixel(x-1, y, c) - pclImage.Pixel(x-1, y+1, c);
+                    
+                    // Y gradient (Sobel)
+                    double gy = pclImage.Pixel(x-1, y+1, c) + 2*pclImage.Pixel(x, y+1, c) + pclImage.Pixel(x+1, y+1, c) -
+                               pclImage.Pixel(x-1, y-1, c) - 2*pclImage.Pixel(x, y-1, c) - pclImage.Pixel(x+1, y-1, c);
+                    
+                    dxImage.Pixel(x, y, c) = gx / 8.0;
+                    dyImage.Pixel(x, y, c) = gy / 8.0;
+                }
+            }
+        }
         
+        // Find low-gradient regions
+        double gradientThreshold = d_advanced->advancedSettings.gradientThreshold;
         int sampleStep = std::max(8, std::min(imageData.width, imageData.height) / 32);
         
         for (int y = sampleStep; y < imageData.height - sampleStep; y += sampleStep) {
             for (int x = sampleStep; x < imageData.width - sampleStep; x += sampleStep) {
                 
-                // Check local variation
-                double localVariation = calculateLocalVariation(pclImage, x, y, 3);
+                // Calculate gradient magnitude at this point
+                double gradientMagnitude = 0.0;
+                for (int c = 0; c < pclImage.NumberOfChannels(); ++c) {
+                    double gx = dxImage.Pixel(x, y, c);
+                    double gy = dyImage.Pixel(x, y, c);
+                    gradientMagnitude += std::sqrt(gx*gx + gy*gy);
+                }
+                gradientMagnitude /= pclImage.NumberOfChannels();
                 
-                if (localVariation < d_advanced->advancedSettings.multiscaleThreshold) {
+                if (gradientMagnitude < gradientThreshold) {
                     samples.append(QPoint(x, y));
                 }
                 
@@ -376,64 +393,17 @@ QVector<QPoint> HardenedBackgroundExtractor::generateMultiscaleSamples(const Ima
         }
         
     } catch (const pcl::Error& e) {
-        qDebug() << "PCL Error in multiscale sample generation:" << e.Message().c_str();
-        // Fall back to grid sampling
+        qDebug() << "PCL Error in gradient sample generation:" << e.Message().c_str();
+        // Fall back to adaptive grid sampling
         return generateAdaptiveGridSamples(imageData);
     }
     
     return samples;
 }
 
-QVector<QPoint> HardenedBackgroundExtractor::generateMorphologicalSamples(const ImageData& imageData)
+QVector<QPoint> HardenedBackgroundExtractor::generateStructureAvoidingSamples(const ImageData& imageData)
 {
-    QVector<QPoint> samples;
-    
-    try {
-        // Convert to PCL format
-        pcl::Image pclImage = convertTopcl::Image(imageData);
-        
-        // Create morphological operations to identify background
-        pcl::MorphologicalTransformation morphOp;
-        morphOp.SetOperator(pcl::MorphOp::Opening);
-        morphOp.SetStructure(pcl::MorphStructure::Box, d_advanced->advancedSettings.structuringElementSize);
-        
-        // Apply morphological opening to remove small structures
-        pcl::Image openedImage;
-        openedImage.Assign(pclImage);
-        
-        pcl::ImageVariant openedVariant(&openedImage);
-        morphOp.ExecuteOn(openedVariant);
-        
-        // Find regions where original and opened images are similar (background)
-        int sampleStep = std::max(6, std::min(imageData.width, imageData.height) / 40);
-        
-        for (int y = sampleStep; y < imageData.height - sampleStep; y += sampleStep) {
-            for (int x = sampleStep; x < imageData.width - sampleStep; x += sampleStep) {
-                
-                double originalValue = pclImage.Pixel(x, y, 0);
-                double openedValue = openedImage.Pixel(x, y, 0);
-                double difference = std::abs(originalValue - openedValue);
-                
-                if (difference < 0.05) {  // Threshold for similarity
-                    samples.append(QPoint(x, y));
-                }
-                
-                if (samples.size() >= d_advanced->advancedSettings.maxSamples) {
-                    break;
-                }
-            }
-            if (samples.size() >= d_advanced->advancedSettings.maxSamples) {
-                break;
-            }
-        }
-        
-    } catch (const pcl::Error& e) {
-        qDebug() << "PCL Error in morphological sample generation:" << e.Message().c_str();
-        // Fall back to grid sampling  
-        return generateAdaptiveGridSamples(imageData);
-    }
-    
-    return samples;
+    return generateLowGradientSamples(imageData); // Use gradient-based approach
 }
 
 QVector<QPoint> HardenedBackgroundExtractor::generateAdaptiveGridSamples(const ImageData& imageData)
@@ -499,8 +469,8 @@ QVector<QPoint> HardenedBackgroundExtractor::generateAdaptiveGridSamples(const I
     return samples;
 }
 
-double HardenedBackgroundExtractor::assessBackgroundQuality(const QVector<float>& backgroundData, 
-                                                            const QVector<float>& originalData) const
+double HardenedBackgroundExtractor::assessGradientBackgroundQuality(const QVector<float>& backgroundData, 
+                                                                    const QVector<float>& originalData) const
 {
     if (backgroundData.size() != originalData.size() || backgroundData.isEmpty()) {
         return 0.0;
@@ -519,7 +489,7 @@ double HardenedBackgroundExtractor::assessBackgroundQuality(const QVector<float>
     backgroundMean /= backgroundData.size();
     originalMean /= originalData.size();
     
-    // Mean squared error and other metrics
+    // Mean squared error and smoothness metrics
     double smoothnessMetric = 0.0;
     int smoothnessCount = 0;
     
@@ -547,8 +517,8 @@ double HardenedBackgroundExtractor::assessBackgroundQuality(const QVector<float>
     return std::max(0.0, std::min(1.0, qualityScore));
 }
 
-// Utility conversion methods
-pcl::Image HardenedBackgroundExtractor::convertTopcl::Image(const ImageData& imageData)
+// Utility conversion methods - FIXED METHOD NAMES
+pcl::Image HardenedBackgroundExtractor::convertToPCLImage(const ImageData& imageData)
 {
     pcl::Image pclImage(imageData.width, imageData.height, imageData.channels);
     
@@ -613,11 +583,11 @@ QVector<float> HardenedBackgroundExtractor::convertToQVector(const pcl::DImage& 
 }
 
 // Preset configurations
-HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getDeepSkySettings()
+HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getDeepSkyGradientSettings()
 {
     AdvancedBackgroundSettings settings;
-    settings.advancedModel = AdvancedModel::SurfaceSpline;
-    settings.advancedSampling = AdvancedSampling::MultiscaleDetection;
+    settings.advancedModel = AdvancedModel::GradientDomain;
+    settings.advancedSampling = AdvancedSampling::LowGradientRegions;
     settings.tolerance = 1.0;
     settings.deviation = 0.8;
     settings.minSamples = 100;
@@ -627,102 +597,62 @@ HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtrac
     settings.rejectionHigh = 2.5;
     settings.rejectionIterations = 3;
     
-    // Advanced parameters for deep sky
+    // Gradient domain parameters
+    settings.gradientThreshold = 0.05;
+    settings.gradientPercentile = 0.2;
+    settings.useGradientMagnitude = true;
+    
+    // HDR compression parameters
+    settings.logMaxGradient = 1.0;
+    settings.logMinGradient = -2.0;
+    settings.expGradient = 1.0;
+    settings.rescale01 = true;
+    settings.preserveColor = true;
+    
+    // Multiscale parameters
     settings.multiscaleLayers = 6;
     settings.multiscaleThreshold = 0.01;
     settings.useLinearMask = false;  // Better for nebulosity
-    settings.smoothingFactor = 0.15;
-    settings.splineOrder = 2;
-    settings.splineThreshold = 0.3;
-    settings.useRobustEstimation = true;
-    settings.robustThreshold = 2.0;
+    
+    // Quality control
+    settings.convergenceThreshold = 0.001;
+    settings.maxIterations = 50;
     settings.enableStructureProtection = true;
     settings.structureProtectionThreshold = 0.05;
+    settings.useRobustEstimation = true;
+    settings.robustThreshold = 2.0;
     
     return settings;
 }
 
-HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getWidefieldSettings()
+HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getWidefieldGradientSettings()
 {
     AdvancedBackgroundSettings settings;
     settings.advancedModel = AdvancedModel::MultiscaleMedian;
-    settings.advancedSampling = AdvancedSampling::AdaptiveGrid;
+    settings.advancedSampling = AdvancedSampling::AdaptiveThreshold;
     settings.tolerance = 1.5;
     settings.deviation = 1.0;
     settings.minSamples = 200;
     settings.maxSamples = 5000;
     settings.useOutlierRejection = true;
-    settings.rejectionLow = 1.8;
-    settings.rejectionHigh = 2.2;
-    settings.rejectionIterations = 4;
-    
-    // Advanced parameters for wide field
-    settings.multiscaleLayers = 8;  // More layers for complex gradients
-    settings.multiscaleThreshold = 0.005;
-    settings.useLinearMask = true;  // Better for star fields
-    settings.smoothingFactor = 0.2;
-    settings.splineOrder = 3;  // Higher order for complex gradients
-    settings.splineThreshold = 0.5;
-    settings.useRobustEstimation = true;
-    settings.robustThreshold = 2.5;
-    settings.enableStructureProtection = true;
-    settings.structureProtectionThreshold = 0.03;
-    
-    return settings;
-}
-
-HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getPlanetarySettings()
-{
-    AdvancedBackgroundSettings settings;
-    settings.advancedModel = AdvancedModel::Linear;  // Simple for planetary
-    settings.advancedSampling = AdvancedSampling::MorphologicalMask;
-    settings.tolerance = 0.5;
-    settings.deviation = 0.3;
-    settings.minSamples = 50;
-    settings.maxSamples = 500;
-    settings.useOutlierRejection = true;
-    settings.rejectionLow = 3.0;
-    settings.rejectionHigh = 3.5;
-    settings.rejectionIterations = 2;
-    
-    // Advanced parameters for planetary
-    settings.multiscaleLayers = 3;  // Fewer layers
-    settings.multiscaleThreshold = 0.02;
-    settings.useLinearMask = false;
-    settings.smoothingFactor = 0.05;  // Less smoothing
-    settings.splineOrder = 1;
-    settings.splineThreshold = 0.8;
-    settings.structuringElementSize = 3;  // Smaller morphological elements
-    settings.morphologicalIterations = 2;
-    settings.useRobustEstimation = false;  // Less critical for planetary
-    settings.enableStructureProtection = false;
-    
-    return settings;
-}
-
-HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtractor::getNoiseReductionSettings()
-{
-    AdvancedBackgroundSettings settings;
-    settings.advancedModel = AdvancedModel::HybridApproach;
-    settings.advancedSampling = AdvancedSampling::IterativeRefinement;
-    settings.tolerance = 2.0;
-    settings.deviation = 1.5;
-    settings.minSamples = 150;
-    settings.maxSamples = 2000;
-    settings.useOutlierRejection = true;
     settings.rejectionLow = 1.5;
     settings.rejectionHigh = 2.0;
     settings.rejectionIterations = 5;
     
-    // Advanced parameters for noise reduction
+    // HDR-specific parameters
+    settings.logMaxGradient = 2.0;
+    settings.logMinGradient = -3.0;
+    settings.expGradient = 1.2;
+    settings.rescale01 = true;
+    settings.preserveColor = false;  // Allow color changes for HDR
+    
+    // Advanced parameters for HDR processing
     settings.multiscaleLayers = 5;
     settings.multiscaleThreshold = 0.02;
     settings.useLinearMask = true;
-    settings.smoothingFactor = 0.3;  // More smoothing for noise
-    settings.splineOrder = 2;
-    settings.splineThreshold = 0.4;
+    settings.gradientThreshold = 0.08;
     settings.useRobustEstimation = true;
-    settings.robustThreshold = 1.5;  // More aggressive for noise
+    settings.robustThreshold = 1.5;  // More aggressive for HDR
     settings.robustIterations = 7;
     settings.enableStructureProtection = true;
     settings.structureProtectionThreshold = 0.08;
@@ -731,36 +661,6 @@ HardenedBackgroundExtractor::AdvancedBackgroundSettings HardenedBackgroundExtrac
 }
 
 // Helper methods
-double HardenedBackgroundExtractor::calculateLocalVariation(const pcl::Image& image, int x, int y, int radius) const
-{
-    if (x < radius || y < radius || 
-        x >= image.Width() - radius || y >= image.Height() - radius) {
-        return 1.0;  // High variation for edge pixels
-    }
-    
-    QVector<double> neighborhood;
-    for (int dy = -radius; dy <= radius; ++dy) {
-        for (int dx = -radius; dx <= radius; ++dx) {
-            neighborhood.append(image.Pixel(x + dx, y + dy, 0));
-        }
-    }
-    
-    // Calculate standard deviation of neighborhood
-    double sum = 0.0;
-    for (double val : neighborhood) {
-        sum += val;
-    }
-    double mean = sum / neighborhood.size();
-    
-    double sumSq = 0.0;
-    for (double val : neighborhood) {
-        double diff = val - mean;
-        sumSq += diff * diff;
-    }
-    
-    return std::sqrt(sumSq / neighborhood.size());
-}
-
 double HardenedBackgroundExtractor::calculateRMSError(const QVector<float>& backgroundData, 
                                                       const QVector<float>& originalData) const
 {
@@ -778,147 +678,392 @@ double HardenedBackgroundExtractor::calculateRMSError(const QVector<float>& back
 }
 
 // Advanced worker thread implementation
-AdvancedBackgroundWorker::AdvancedBackgroundWorker(const ImageData& imageData,
-                                                   const HardenedBackgroundExtractor::AdvancedBackgroundSettings& settings,
-                                                   QObject* parent)
+AdvancedGradientWorker::AdvancedGradientWorker(const ImageData& imageData,
+                                               const HardenedBackgroundExtractor::AdvancedBackgroundSettings& settings,
+                                               QObject* parent)
     : BackgroundExtractionWorker(imageData, static_cast<BackgroundExtractionSettings>(settings), parent)
     , m_advancedSettings(settings)
 {
     // Initialize PCL objects
-    m_multiscaleTransform = std::make_unique<pcl::MultiscaleMedianTransform>();
-    m_surfaceSpline = std::make_unique<pcl::SurfaceSpline<pcl::RBFType::ThinPlateSpline>>();
-    m_gradientProcessor = std::make_unique<GradientsHdrCompression>();
+    m_gradientBase = std::make_unique<GradientsBase>();
 }
 
-void AdvancedBackgroundWorker::run()
+void AdvancedGradientWorker::run()
 {
     QTime timer;
     timer.start();
     
-    m_result.clear();
+    m_result = BackgroundExtractionResult(); // Clear result
     
     try {
-        if (!performAdvancedExtraction()) {
+        if (!performGradientDomainExtraction()) {
             m_result.success = false;
+            m_result.errorMessage = "Gradient domain extraction failed";
+            emit finished(m_result);
             return;
         }
         
         m_result.success = true;
         m_result.processingTimeSeconds = timer.elapsed() / 1000.0;
+        emit finished(m_result);
         
     } catch (const std::exception& e) {
         m_result.success = false;
         m_result.errorMessage = QString("Advanced extraction error: %1").arg(e.what());
+        emit finished(m_result);
     } catch (...) {
         m_result.success = false;
         m_result.errorMessage = "Unknown advanced extraction error";
+        emit finished(m_result);
     }
 }
 
-bool AdvancedBackgroundWorker::performAdvancedExtraction()
+bool AdvancedGradientWorker::performGradientDomainExtraction()
 {
     if (m_cancelled) return false;
     
-    emit advancedProgress("Advanced extraction starting", 5, "Initializing PCL components");
+    emit gradientProgress("Advanced extraction starting", 5, "Initializing gradient components");
     
     // Choose extraction method based on advanced model
     switch (m_advancedSettings.advancedModel) {
-    case HardenedBackgroundExtractor::AdvancedModel::MultiscaleMedian:
-        return executeMultiscaleApproach();
-    case HardenedBackgroundExtractor::AdvancedModel::SurfaceSpline:
-        return executeSurfaceSplineApproach();
     case HardenedBackgroundExtractor::AdvancedModel::GradientDomain:
-        return executeGradientDomainApproach();
-    case HardenedBackgroundExtractor::AdvancedModel::HybridApproach:
-        return executeHybridApproach();
+        return executeGradientAnalysis();
+    case HardenedBackgroundExtractor::AdvancedModel::HDRCompression:
+        return executeHDRCompressionMethod();
+    case HardenedBackgroundExtractor::AdvancedModel::MultiscaleMedian:
+        return executeMultiscaleMethod();
+    case HardenedBackgroundExtractor::AdvancedModel::HybridGradient:
+        return executeHybridGradientMethod();
     default:
         // Fall back to base class
         return BackgroundExtractionWorker::performExtraction();
     }
 }
 
-bool AdvancedBackgroundWorker::executeMultiscaleApproach()
+bool AdvancedGradientWorker::executeGradientAnalysis()
 {
-    emit advancedProgress("Multiscale approach", 10, "Setting up multiscale transform");
+    emit gradientProgress("Gradient analysis", 10, "Converting to gradient domain");
     
     try {
-        // Configure multiscale transform
-        m_multiscaleTransform->SetNumberOfLayers(m_advancedSettings.multiscaleLayers);
-        m_multiscaleTransform->EnableLinearMask(m_advancedSettings.useLinearMask);
+        // Convert image to gradient domain format
+        GradientsBase::imageType_t workingImage;
+        workingImage = HardenedBackgroundExtractor::convertToGradientImage(m_imageData);
         
-        // Convert image data to PCL format
-        pcl::Image pclImage = HardenedBackgroundExtractor::convertTopcl::Image(m_imageData);
+        emit gradientProgress("Gradient analysis", 30, "Computing gradient fields");
         
-        emit advancedProgress("Multiscale approach", 30, "Executing multiscale decomposition");
-        
-        // Apply multiscale transform
-        pcl::ImageVariant imageVariant(&pclImage);
-        bool success = m_multiscaleTransform->ExecuteOn(imageVariant);
-        
-        if (success && !m_cancelled) {
-            emit advancedProgress("Multiscale approach", 70, "Extracting background from scales");
-            
-            // Extract background component (this would involve more sophisticated
-            // analysis of the multiscale layers in a full implementation)
-            pcl::DImage backgroundModel;
-            backgroundModel.Assign(pclImage);
-            
-            // Convert back to our format
-            m_result.backgroundData = HardenedBackgroundExtractor::convertToQVector(backgroundModel);
-            
-            // Create corrected image
-            m_result.correctedData = m_imageData.pixels;
-            for (int i = 0; i < m_result.correctedData.size() && i < m_result.backgroundData.size(); ++i) {
-                m_result.correctedData[i] -= m_result.backgroundData[i];
-            }
-            
-            emit advancedProgress("Multiscale approach", 100, "Multiscale extraction complete");
-            return true;
+        // Compute gradient fields using the gradient base
+        if (!computeGradientFields()) {
+            return false;
         }
         
-    } catch (const pcl::Error& e) {
-        m_result.errorMessage = QString("Multiscale approach failed: %1").arg(e.Message().c_str());
+        emit gradientProgress("Gradient analysis", 60, "Analyzing gradient statistics");
+        
+        if (!analyzeGradientStatistics()) {
+            return false;
+        }
+        
+        emit gradientProgress("Gradient analysis", 80, "Fitting gradient domain model");
+        
+        if (!fitGradientDomainModel()) {
+            return false;
+        }
+        
+        emit gradientProgress("Gradient analysis", 100, "Gradient analysis complete");
+        return true;
+        
+    } catch (const std::exception& e) {
+        m_result.errorMessage = QString("Gradient analysis failed: %1").arg(e.what());
         return false;
     }
-    
-    return false;
 }
 
-bool AdvancedBackgroundWorker::executeSurfaceSplineApproach()
+bool AdvancedGradientWorker::executeHDRCompressionMethod()
 {
-    emit advancedProgress("Surface spline approach", 10, "Generating optimized samples");
+    emit gradientProgress("HDR compression method", 10, "Setting up HDR compression");
     
-    // This would implement the surface spline approach using the existing
-    // sample generation methods from the main class
-    
-    emit advancedProgress("Surface spline approach", 100, "Surface spline extraction complete");
-    return true;  // Placeholder
+    try {
+        // Initialize HDR compressor if not already done
+        if (!m_hdrCompressor) {
+            m_hdrCompressor = std::make_unique<GradientsHdrCompression>();
+        }
+        
+        // Convert to gradient image format
+        GradientsBase::imageType_t inputImage = HardenedBackgroundExtractor::convertToGradientImage(m_imageData);
+        
+        emit gradientProgress("HDR compression method", 40, "Applying HDR compression");
+        
+        // Set up HDR compression parameters
+        m_hdrCompressor->hdrCompressionSetImage(inputImage);
+        
+        // Apply HDR compression
+        GradientsBase::imageType_t compressedImage;
+        m_hdrCompressor->hdrCompression(
+            m_advancedSettings.logMaxGradient,
+            m_advancedSettings.logMinGradient,
+            m_advancedSettings.expGradient,
+            m_advancedSettings.rescale01,
+            compressedImage
+        );
+        
+        emit gradientProgress("HDR compression method", 80, "Converting results");
+        
+        // Convert back to our format
+        ImageData resultData = HardenedBackgroundExtractor::convertFromGradientImage(compressedImage);
+        m_result.backgroundData = resultData.pixels;
+        
+        // Create corrected image
+        m_result.correctedData = m_imageData.pixels;
+        for (int i = 0; i < m_result.correctedData.size() && i < m_result.backgroundData.size(); ++i) {
+            m_result.correctedData[i] -= m_result.backgroundData[i];
+        }
+        
+        emit gradientProgress("HDR compression method", 100, "HDR compression complete");
+        return true;
+        
+    } catch (const std::exception& e) {
+        m_result.errorMessage = QString("HDR compression failed: %1").arg(e.what());
+        return false;
+    }
 }
 
-bool AdvancedBackgroundWorker::executeGradientDomainApproach()
+bool AdvancedGradientWorker::executeMultiscaleMethod()
 {
-    emit advancedProgress("Gradient domain approach", 10, "Setting up gradient analysis"); 
+    emit gradientProgress("Multiscale method", 10, "Setting up multiscale transform");
     
-    // This would use the GradientsHdrCompression class from the gradient module
-    
-    emit advancedProgress("Gradient domain approach", 100, "Gradient domain extraction complete");
-    return true;  // Placeholder
+    // This would use the multiscale median transform
+    // For now, delegate to base class implementation
+    return BackgroundExtractionWorker::performExtraction();
 }
 
-bool AdvancedBackgroundWorker::executeHybridApproach()
+bool AdvancedGradientWorker::executeHybridGradientMethod()
 {
-    emit advancedProgress("Hybrid approach", 10, "Combining multiple methods");
+    emit gradientProgress("Hybrid gradient method", 10, "Combining multiple methods");
     
-    // This would combine multiple approaches for optimal results
-    bool multiscaleSuccess = executeMultiscaleApproach();
+    // Try gradient analysis first
+    bool gradientSuccess = executeGradientAnalysis();
     
-    if (multiscaleSuccess && !m_cancelled) {
-        emit advancedProgress("Hybrid approach", 60, "Refining with surface spline");
-        // Could refine the multiscale result with surface spline
+    if (gradientSuccess && !m_cancelled) {
+        emit gradientProgress("Hybrid gradient method", 60, "Refining with HDR compression");
+        // Could refine the gradient result with HDR compression
+        // For now, just use the gradient result
     }
     
-    emit advancedProgress("Hybrid approach", 100, "Hybrid extraction complete");
-    return multiscaleSuccess;
+    emit gradientProgress("Hybrid gradient method", 100, "Hybrid gradient extraction complete");
+    return gradientSuccess;
 }
 
-#include "HardenedBackgroundExtractor.moc"
+bool AdvancedGradientWorker::computeGradientFields()
+{
+    try {
+        // Convert image data to working format
+        int width = m_imageData.width;
+        int height = m_imageData.height;
+        
+        m_workingImage.resize(height);
+        for (int y = 0; y < height; ++y) {
+            m_workingImage[y].resize(width);
+            for (int x = 0; x < width; ++x) {
+                int index = y * width + x;
+                if (index < m_imageData.pixels.size()) {
+                    m_workingImage[y][x] = m_imageData.pixels[index];
+                } else {
+                    m_workingImage[y][x] = 0.0;
+                }
+            }
+        }
+        
+        // Initialize gradient images
+        m_dxImage.resize(height);
+        m_dyImage.resize(height);
+        for (int y = 0; y < height; ++y) {
+            m_dxImage[y].resize(width);
+            m_dyImage[y].resize(width);
+        }
+        
+        // Compute gradients using simple finite differences
+        for (int y = 1; y < height - 1; ++y) {
+            for (int x = 1; x < width - 1; ++x) {
+                // X gradient
+                m_dxImage[y][x] = (m_workingImage[y][x+1] - m_workingImage[y][x-1]) * 0.5;
+                // Y gradient  
+                m_dyImage[y][x] = (m_workingImage[y+1][x] - m_workingImage[y-1][x]) * 0.5;
+            }
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        m_result.errorMessage = QString("Gradient field computation failed: %1").arg(e.what());
+        return false;
+    }
+}
+
+bool AdvancedGradientWorker::analyzeGradientStatistics()
+{
+    try {
+        // Calculate gradient statistics
+        double sumGradMag = 0.0;
+        double sumGradMagSq = 0.0;
+        int count = 0;
+        
+        for (int y = 1; y < m_imageData.height - 1; ++y) {
+            for (int x = 1; x < m_imageData.width - 1; ++x) {
+                double gx = m_dxImage[y][x];
+                double gy = m_dyImage[y][x];
+                double gradMag = std::sqrt(gx*gx + gy*gy);
+                
+                sumGradMag += gradMag;
+                sumGradMagSq += gradMag * gradMag;
+                count++;
+            }
+        }
+        
+        m_gradientMean = sumGradMag / count;
+        m_gradientStdDev = std::sqrt((sumGradMagSq / count) - (m_gradientMean * m_gradientMean));
+        m_gradientThreshold = m_gradientMean + m_advancedSettings.gradientPercentile * m_gradientStdDev;
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        m_result.errorMessage = QString("Gradient statistics analysis failed: %1").arg(e.what());
+        return false;
+    }
+}
+
+bool AdvancedGradientWorker::selectGradientBasedSamples()
+{
+    // This would select sample points based on gradient analysis
+    // For now, just select low-gradient regions
+    return true;
+}
+
+bool AdvancedGradientWorker::fitGradientDomainModel()
+{
+    try {
+        // Create background model based on gradient analysis
+        int totalPixels = m_imageData.width * m_imageData.height * m_imageData.channels;
+        m_result.backgroundData.resize(totalPixels);
+        
+        // Simple approach: smooth the low-gradient regions
+        for (int c = 0; c < m_imageData.channels; ++c) {
+            for (int y = 0; y < m_imageData.height; ++y) {
+                for (int x = 0; x < m_imageData.width; ++x) {
+                    int index = (y * m_imageData.width + x) + c * m_imageData.width * m_imageData.height;
+                    
+                    if (y > 0 && y < m_imageData.height - 1 && x > 0 && x < m_imageData.width - 1) {
+                        // Calculate gradient magnitude
+                        double gx = m_dxImage[y][x];
+                        double gy = m_dyImage[y][x];
+                        double gradMag = std::sqrt(gx*gx + gy*gy);
+                        
+                        if (gradMag < m_gradientThreshold) {
+                            // Low gradient - use local average
+                            double sum = 0.0;
+                            int count = 0;
+                            for (int dy = -1; dy <= 1; ++dy) {
+                                for (int dx = -1; dx <= 1; ++dx) {
+                                    int nx = x + dx;
+                                    int ny = y + dy;
+                                    if (nx >= 0 && nx < m_imageData.width && ny >= 0 && ny < m_imageData.height) {
+                                        int nindex = (ny * m_imageData.width + nx) + c * m_imageData.width * m_imageData.height;
+                                        if (nindex < m_imageData.pixels.size()) {
+                                            sum += m_imageData.pixels[nindex];
+                                            count++;
+                                        }
+                                    }
+                                }
+                            }
+                            m_result.backgroundData[index] = sum / count;
+                        } else {
+                            // High gradient - interpolate from nearby low-gradient regions
+                            m_result.backgroundData[index] = m_imageData.pixels[index] * 0.5; // Simple fallback
+                        }
+                    } else {
+                        // Edge pixels
+                        m_result.backgroundData[index] = m_imageData.pixels[index] * 0.5;
+                    }
+                }
+            }
+        }
+        
+        return true;
+        
+    } catch (const std::exception& e) {
+        m_result.errorMessage = QString("Gradient domain model fitting failed: %1").arg(e.what());
+        return false;
+    }
+}
+
+// Static utility methods for HardenedBackgroundExtractor
+GradientsBase::imageType_t HardenedBackgroundExtractor::convertToGradientImage(const ImageData& imageData)
+{
+    // Convert ImageData to GradientsBase::imageType_t
+    // This is a simplified conversion - in practice you'd need to match the exact type
+    GradientsBase::imageType_t result;
+    
+    // Initialize with the right dimensions
+    result.resize(imageData.height);
+    for (int y = 0; y < imageData.height; ++y) {
+        result[y].resize(imageData.width);
+        for (int x = 0; x < imageData.width; ++x) {
+            int index = y * imageData.width + x;
+            if (index < imageData.pixels.size()) {
+                result[y][x] = imageData.pixels[index];
+            } else {
+                result[y][x] = 0.0;
+            }
+        }
+    }
+    
+    return result;
+}
+
+ImageData HardenedBackgroundExtractor::convertFromGradientImage(const GradientsBase::imageType_t& gradientImage)
+{
+    ImageData result;
+    
+    if (gradientImage.empty()) {
+        return result;
+    }
+    
+    result.height = gradientImage.size();
+    result.width = gradientImage[0].size();
+    result.channels = 1; // Assuming single channel from gradient processing
+    
+    int totalPixels = result.width * result.height;
+    result.pixels.resize(totalPixels);
+    
+    for (int y = 0; y < result.height; ++y) {
+        for (int x = 0; x < result.width; ++x) {
+            int index = y * result.width + x;
+            result.pixels[index] = static_cast<float>(gradientImage[y][x]);
+        }
+    }
+    
+    result.format = "Gradient Domain";
+    result.colorSpace = "Grayscale";
+    
+    return result;
+}
+
+QVector<float> HardenedBackgroundExtractor::convertGradientToQVector(const GradientsBase::imageType_t& gradientImage)
+{
+    QVector<float> result;
+    
+    if (gradientImage.empty()) {
+        return result;
+    }
+    
+    int height = gradientImage.size();
+    int width = gradientImage[0].size();
+    result.resize(width * height);
+    
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            int index = y * width + x;
+            result[index] = static_cast<float>(gradientImage[y][x]);
+        }
+    }
+    
+    return result;
+}
