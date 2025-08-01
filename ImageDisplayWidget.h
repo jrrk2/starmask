@@ -33,10 +33,14 @@ public:
     
     void setStretchLimits(double minValue, double maxValue);
     void getStretchLimits(double& minValue, double& maxValue) const;
-
+    void setStarOverlay(const QVector<QPoint>& centers, const QVector<float>& radii);
+  
 signals:
     void imageClicked(int x, int y, float value);
     void zoomChanged(double factor);
+
+public slots:
+    void clearStarOverlay();
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -93,6 +97,10 @@ private:
     double m_imageMax;
     double m_imageMean;
     double m_imageStdDev;
+
+    QVector<QPoint> m_starCenters;
+    QVector<float> m_starRadii;
+    bool m_showStars = false;
 };
 
 #endif // IMAGE_DISPLAY_WIDGET_H

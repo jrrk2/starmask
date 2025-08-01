@@ -4,6 +4,7 @@
 
 #include "PCLMockAPI.h"
 #include "PCLThreadMock.h"
+#include <pcl/api/APIInterface.h>
 
 #include <map>
 #include <mutex>
@@ -80,6 +81,16 @@ void InitializeMockAPI() {
     RegisterThreadFunctions();
     RegisterGlobalFunctions();
     RegisterUIFunctions();
+
+    // Create API interface with mock function resolver if not already created
+    if (!API) {
+      API = new pcl::APIInterface(pcl_mock::GetMockFunctionResolver());
+    }
+
+    // Set module handle if not already set
+    if (!GetModuleHandle()) {
+      pcl_mock::SetModuleHandle((void*)0x12345678);
+    }
     
     LogDebug("Mock API initialized");
 }

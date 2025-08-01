@@ -343,17 +343,78 @@ void ImageDisplayWidget::onStretchChanged()
 void ImageDisplayWidget::updateDisplay()
 {
     if (!m_imageData || !m_imageData->isValid()) {
+        m_imageLabel->clear();
+        m_imageLabel->setText("No image loaded");
         return;
     }
     
+    qDebug() << "Updating display - zoom factor:" << m_zoomFactor;
+    
     m_currentPixmap = createPixmapFromImageData();
     
-    if (!m_currentPixmap.isNull()) {
-        QSize scaledSize = m_currentPixmap.size() * m_zoomFactor;
-        QPixmap scaledPixmap = m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        m_imageLabel->setPixmap(scaledPixmap);
-        m_imageLabel->resize(scaledSize);
+    if (m_currentPixmap.isNull()) {
+        qDebug() << "Failed to create pixmap from image data";
+        return;
     }
+    
+    qDebug() << "Original pixmap size:" << m_currentPixmap.size();
+    
+    // Apply zoom scaling
+    QSize scaledSize = m_currentPixmap.size() * m_zoomFactor;
+    qDebug() << "Scaled size:" << scaledSize;
+    
+    QPixmap displayPixmap;
+    if (std::abs(m_zoomFactor - 1.0) > 0.001) {
+        // Only scale if zoom factor is not 1.0
+        displayPixmap = m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    } else {
+        displayPixmap = m_currentPixmap;
+    }
+    
+    // Handle star overlay
+    if (m_showStars && !m_starCenters.isEmpty()) {
+        qDebug() << "Drawing star overlay with" << m_starCenters.size() << "stars";
+        
+        QPixmap overlayPixmap = displayPixmap;  // Work with the scaled pixmap
+        QPainter painter(&overlayPixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(QPen(Qt::green, 2));  // Make stars more visible
+        
+        // Scale factors for star positions
+        double xScale = double(displayPixmap.width()) / m_imageData->width;
+        double yScale = double(displayPixmap.height()) / m_imageData->height;
+        
+        qDebug() << "Star overlay scale factors:" << xScale << yScale;
+        
+        for (int i = 0; i < m_starCenters.size() && i < m_starRadii.size(); ++i) {
+            const QPoint& pt = m_starCenters[i];
+            float r = m_starRadii[i];
+            
+            // Scale star position and radius
+            QPointF scaledCenter(pt.x() * xScale, pt.y() * yScale);
+            double scaledRadius = r * std::min(xScale, yScale);
+            
+            QRectF ellipse(scaledCenter.x() - scaledRadius,
+                          scaledCenter.y() - scaledRadius,
+                          2 * scaledRadius,
+                          2 * scaledRadius);
+            
+            painter.drawEllipse(ellipse);
+            
+            // Draw center point
+            painter.drawPoint(scaledCenter);
+        }
+        
+        painter.end();
+        m_imageLabel->setPixmap(overlayPixmap);
+    } else {
+        m_imageLabel->setPixmap(displayPixmap);
+    }
+    
+    // Update label size to match pixmap
+    m_imageLabel->resize(displayPixmap.size());
+    
+    qDebug() << "Display updated - label size:" << m_imageLabel->size() << "pixmap size:" << displayPixmap.size();
 }
 
 void ImageDisplayWidget::updateZoomControls()
@@ -427,4 +488,20 @@ void ImageDisplayWidget::stretchImageData(const float* input, float* output, siz
         double stretched = (input[i] - minVal) * scale;
         output[i] = static_cast<float>(std::clamp(stretched, 0.0, 1.0));
     }
+}
+
+void ImageDisplayWidget::setStarOverlay(const QVector<QPoint>& centers, const QVector<float>& radii)
+{
+    m_starCenters = centers;
+    m_starRadii = radii;
+    m_showStars = true;
+    updateDisplay(); // triggers repaint
+}
+
+void ImageDisplayWidget::clearStarOverlay()
+{
+    m_starCenters.clear();
+    m_starRadii.clear();
+    m_showStars = false;
+    updateDisplay();
 }
