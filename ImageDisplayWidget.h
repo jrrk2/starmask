@@ -14,6 +14,8 @@
 #include <QPixmap>
 
 struct ImageData;
+struct ValidationResult;
+struct CatalogStar;
 
 class ImageDisplayWidget : public QWidget
 {
@@ -41,11 +43,21 @@ public:
     void clearStarOverlay();
     void setStarOverlayVisible(bool visible);
     bool isStarOverlayVisible() const { return m_showStars; }
+    
+    // Catalog validation display
+    void setValidationResults(const ValidationResult& results);
+    void clearValidationResults();
+    void setCatalogOverlayVisible(bool visible);
+    void setValidationOverlayVisible(bool visible);
+    bool isCatalogOverlayVisible() const { return m_showCatalog; }
+    bool isValidationOverlayVisible() const { return m_showValidation; }
 
 signals:
     void imageClicked(int x, int y, float value);
     void zoomChanged(double factor);
     void starOverlayToggled(bool visible);
+    void catalogOverlayToggled(bool visible);
+    void validationOverlayToggled(bool visible);
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -59,6 +71,8 @@ private slots:
     void onAutoStretchToggled(bool enabled);
     void onStretchChanged();
     void onShowStarsToggled(bool show);
+    void onShowCatalogToggled(bool show);
+    void onShowValidationToggled(bool show);
 
 private:
     void setupUI();
@@ -66,6 +80,10 @@ private:
     void updateZoomControls();
     QPixmap createPixmapFromImageData();
     void stretchImageData(const float* input, float* output, size_t count, double minVal, double maxVal);
+    void drawOverlays(QPixmap& pixmap);
+    void drawStarOverlay(QPainter& painter, double xScale, double yScale);
+    void drawCatalogOverlay(QPainter& painter, double xScale, double yScale);
+    void drawValidationOverlay(QPainter& painter, double xScale, double yScale);
     
     // UI components
     QVBoxLayout* m_mainLayout;
@@ -80,8 +98,10 @@ private:
     QPushButton* m_zoom100Button;
     QLabel* m_zoomLabel;
     
-    // Star overlay control
+    // Overlay controls
     QCheckBox* m_showStarsCheck;
+    QCheckBox* m_showCatalogCheck;
+    QCheckBox* m_showValidationCheck;
     
     // Stretch controls
     QPushButton* m_autoStretchButton;
@@ -111,6 +131,11 @@ private:
     QVector<QPoint> m_starCenters;
     QVector<float> m_starRadii;
     bool m_showStars = false;
+    
+    // Catalog validation data
+    ValidationResult* m_validationResults = nullptr;
+    bool m_showCatalog = false;
+    bool m_showValidation = false;
 };
 
 #endif // IMAGE_DISPLAY_WIDGET_H

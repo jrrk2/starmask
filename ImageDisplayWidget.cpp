@@ -32,6 +32,12 @@ ImageDisplayWidget::ImageDisplayWidget(QWidget *parent)
 ImageDisplayWidget::~ImageDisplayWidget() = default;
 // Update the setupUI() method in ImageDisplayWidget.cpp to add the star toggle:
 
+// Add these methods to the existing ImageDisplayWidget.cpp
+
+#include "StarCatalogValidator.h" // Add this include
+
+// Update the setupUI method to add catalog validation controls:
+
 void ImageDisplayWidget::setupUI()
 {
     m_mainLayout = new QVBoxLayout(this);
@@ -66,12 +72,26 @@ void ImageDisplayWidget::setupUI()
     separator1->setFrameShadow(QFrame::Sunken);
     m_controlLayout->addWidget(separator1);
     
-    // NEW: Star overlay toggle
-    m_showStarsCheck = new QCheckBox("Show Stars");
-    m_showStarsCheck->setChecked(m_showStars);  // Use current state
-    m_showStarsCheck->setToolTip("Toggle star detection overlay");
+    // Overlay controls
+    m_showStarsCheck = new QCheckBox("Show Detected Stars");
+    m_showStarsCheck->setChecked(m_showStars);
+    m_showStarsCheck->setToolTip("Toggle detected star overlay (green circles)");
     connect(m_showStarsCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowStarsToggled);
     m_controlLayout->addWidget(m_showStarsCheck);
+    
+    m_showCatalogCheck = new QCheckBox("Show Catalog Stars");
+    m_showCatalogCheck->setChecked(m_showCatalog);
+    m_showCatalogCheck->setToolTip("Toggle catalog star overlay (blue squares)");
+    m_showCatalogCheck->setEnabled(false);
+    connect(m_showCatalogCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowCatalogToggled);
+    m_controlLayout->addWidget(m_showCatalogCheck);
+    
+    m_showValidationCheck = new QCheckBox("Show Matches");
+    m_showValidationCheck->setChecked(m_showValidation);
+    m_showValidationCheck->setToolTip("Toggle validation match overlay (yellow lines)");
+    m_showValidationCheck->setEnabled(false);
+    connect(m_showValidationCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowValidationToggled);
+    m_controlLayout->addWidget(m_showValidationCheck);
     
     // Add another separator
     auto* separator2 = new QFrame();
@@ -80,6 +100,13 @@ void ImageDisplayWidget::setupUI()
     m_controlLayout->addWidget(separator2);
     
     m_controlLayout->addStretch();
+        
+    // NEW: Star overlay toggle
+    m_showStarsCheck = new QCheckBox("Show Stars");
+    m_showStarsCheck->setChecked(m_showStars);  // Use current state
+    m_showStarsCheck->setToolTip("Toggle star detection overlay");
+    connect(m_showStarsCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowStarsToggled);
+    m_controlLayout->addWidget(m_showStarsCheck);
     
     // Stretch controls
     m_autoStretchButton = new QPushButton("Auto Stretch");
@@ -124,6 +151,13 @@ void ImageDisplayWidget::setupUI()
     m_scrollArea = new QScrollArea;
     m_scrollArea->setBackgroundRole(QPalette::Dark);
     m_scrollArea->setAlignment(Qt::AlignCenter);
+        
+    m_mainLayout->addWidget(controlGroup);
+    
+    // Image display area (unchanged)
+    m_scrollArea = new QScrollArea;
+    m_scrollArea->setBackgroundRole(QPalette::Dark);
+    m_scrollArea->setAlignment(Qt::AlignCenter);
     
     m_imageLabel = new QLabel;
     m_imageLabel->setAlignment(Qt::AlignCenter);
@@ -136,6 +170,258 @@ void ImageDisplayWidget::setupUI()
     
     // Initial state
     onAutoStretchToggled(m_autoStretchEnabled);
+}
+
+// Add new overlay control methods:
+
+void ImageDisplayWidget::onShowCatalogToggled(bool show)
+{
+    m_showCatalog = show;
+    qDebug() << "Catalog overlay toggled:" << (show ? "ON" : "OFF");
+    updateDisplay();
+    emit catalogOverlayToggled(show);
+}
+
+void ImageDisplayWidget::onShowValidationToggled(bool show)
+{
+    m_showValidation = show;
+    qDebug() << "Validation overlay toggled:" << (show ? "ON" : "OFF");
+    updateDisplay();
+    emit validationOverlayToggled(show);
+}
+
+void ImageDisplayWidget::setValidationResults(const ValidationResult& results)
+{
+    if (m_validationResults) {
+        delete m_validationResults;
+    }
+    
+    m_validationResults = new ValidationResult(results);
+    
+    // Enable the overlay checkboxes if we have data
+    if (!results.catalogStars.isEmpty()) {
+        m_showCatalogCheck->setEnabled(true);
+        m_showCatalog = true;
+        m_showCatalogCheck->setChecked(true);
+    }
+    
+    if (!results.matches.isEmpty()) {
+        m_showValidationCheck->setEnabled(true);
+        m_showValidation = true;
+        m_showValidationCheck->setChecked(true);
+    }
+    
+    updateDisplay();
+}
+
+void ImageDisplayWidget::clearValidationResults()
+{
+    if (m_validationResults) {
+        delete m_validationResults;
+        m_validationResults = nullptr;
+    }
+    
+    m_showCatalog = false;
+    m_showValidation = false;
+    m_showCatalogCheck->setChecked(false);
+    m_showCatalogCheck->setEnabled(false);
+    m_showValidationCheck->setChecked(false);
+    m_showValidationCheck->setEnabled(false);
+    
+    updateDisplay();
+}
+
+void ImageDisplayWidget::setCatalogOverlayVisible(bool visible)
+{
+    if (m_showCatalog != visible) {
+        m_showCatalog = visible;
+        m_showCatalogCheck->setChecked(visible);
+        updateDisplay();
+    }
+}
+
+void ImageDisplayWidget::setValidationOverlayVisible(bool visible)
+{
+    if (m_showValidation != visible) {
+        m_showValidation = visible;
+        m_showValidationCheck->setChecked(visible);
+        updateDisplay();
+    }
+}
+
+// Update the updateDisplay method to handle all overlays:
+
+void ImageDisplayWidget::updateDisplay()
+{
+    if (!m_imageData || !m_imageData->isValid()) {
+        m_imageLabel->clear();
+        m_imageLabel->setText("No image loaded");
+        return;
+    }
+    
+    qDebug() << "Updating display - zoom factor:" << m_zoomFactor;
+    
+    m_currentPixmap = createPixmapFromImageData();
+    
+    if (m_currentPixmap.isNull()) {
+        qDebug() << "Failed to create pixmap from image data";
+        return;
+    }
+    
+    // Apply zoom scaling
+    QSize scaledSize = m_currentPixmap.size() * m_zoomFactor;
+    
+    QPixmap displayPixmap;
+    if (std::abs(m_zoomFactor - 1.0) > 0.001) {
+        displayPixmap = m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    } else {
+        displayPixmap = m_currentPixmap;
+    }
+    
+    // Draw all overlays
+    drawOverlays(displayPixmap);
+    
+    m_imageLabel->setPixmap(displayPixmap);
+    m_imageLabel->resize(displayPixmap.size());
+    
+    qDebug() << "Display updated - label size:" << m_imageLabel->size() << "pixmap size:" << displayPixmap.size();
+}
+
+void ImageDisplayWidget::drawOverlays(QPixmap& pixmap)
+{
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    
+    // Calculate scale factors
+    double xScale = double(pixmap.width()) / m_imageData->width;
+    double yScale = double(pixmap.height()) / m_imageData->height;
+    
+    // Draw overlays in order: catalog stars (bottom), detected stars (middle), validation matches (top)
+    
+    if (m_showCatalog && m_validationResults) {
+        drawCatalogOverlay(painter, xScale, yScale);
+    }
+    
+    if (m_showStars && !m_starCenters.isEmpty()) {
+        drawStarOverlay(painter, xScale, yScale);
+    }
+    
+    if (m_showValidation && m_validationResults) {
+        drawValidationOverlay(painter, xScale, yScale);
+    }
+    
+    painter.end();
+}
+
+void ImageDisplayWidget::drawStarOverlay(QPainter& painter, double xScale, double yScale)
+{
+    painter.setPen(QPen(Qt::green, 2));
+    painter.setBrush(Qt::NoBrush);
+    
+    for (int i = 0; i < m_starCenters.size() && i < m_starRadii.size(); ++i) {
+        const QPoint& pt = m_starCenters[i];
+        float r = m_starRadii[i];
+        
+        QPointF scaledCenter(pt.x() * xScale, pt.y() * yScale);
+        double scaledRadius = r * std::min(xScale, yScale);
+        
+        QRectF ellipse(scaledCenter.x() - scaledRadius,
+                      scaledCenter.y() - scaledRadius,
+                      2 * scaledRadius,
+                      2 * scaledRadius);
+        
+        painter.drawEllipse(ellipse);
+        painter.drawPoint(scaledCenter);
+    }
+}
+
+void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
+{
+    painter.setPen(QPen(Qt::blue, 2));
+    painter.setBrush(Qt::NoBrush);
+    
+    for (const auto& star : m_validationResults->catalogStars) {
+        if (!star.isValid) continue;
+        
+        QPointF scaledPos(star.pixelPos.x() * xScale, star.pixelPos.y() * yScale);
+        
+        // Draw square marker for catalog stars
+        double size = 6.0;
+        QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
+        painter.drawRect(rect);
+        
+        // Draw center point
+        painter.drawPoint(scaledPos);
+        
+        // Draw magnitude label for bright stars
+        if (star.magnitude < 8.0) {
+            painter.drawText(scaledPos + QPointF(8, -8), 
+                           QString::number(star.magnitude, 'f', 1));
+        }
+    }
+}
+
+void ImageDisplayWidget::drawValidationOverlay(QPainter& painter, double xScale, double yScale)
+{
+    painter.setPen(QPen(Qt::yellow, 2));
+    
+    for (const auto& match : m_validationResults->matches) {
+        if (!match.isGoodMatch) continue;
+        
+        if (match.detectedIndex >= 0 && match.detectedIndex < m_starCenters.size() &&
+            match.catalogIndex >= 0 && match.catalogIndex < m_validationResults->catalogStars.size()) {
+            
+            // Get detected star position
+            QPoint detectedPos = m_starCenters[match.detectedIndex];
+            QPointF scaledDetected(detectedPos.x() * xScale, detectedPos.y() * yScale);
+            
+            // Get catalog star position
+            const CatalogStar& catalogStar = m_validationResults->catalogStars[match.catalogIndex];
+            QPointF scaledCatalog(catalogStar.pixelPos.x() * xScale, catalogStar.pixelPos.y() * yScale);
+            
+            // Draw line connecting matched stars
+            painter.drawLine(scaledDetected, scaledCatalog);
+            
+            // Draw distance label at midpoint
+            QPointF midpoint = (scaledDetected + scaledCatalog) / 2.0;
+            QString distanceText = QString("%1px").arg(match.distance, 0, 'f', 1);
+            
+            // Set up text background for better visibility
+            QFontMetrics fm(painter.font());
+            QRect textRect = fm.boundingRect(distanceText);
+            textRect.moveCenter(midpoint.toPoint());
+            textRect.adjust(-2, -1, 2, 1);
+            
+            painter.fillRect(textRect, QColor(0, 0, 0, 180));
+            painter.setPen(QPen(Qt::yellow, 1));
+            painter.drawText(textRect, Qt::AlignCenter, distanceText);
+            
+            // Restore pen for lines
+            painter.setPen(QPen(Qt::yellow, 2));
+        }
+    }
+    
+    // Draw summary statistics in corner
+    if (!m_validationResults->matches.isEmpty()) {
+        painter.setPen(QPen(Qt::white, 1));
+        painter.setBrush(QColor(0, 0, 0, 200));
+        
+        QString statsText = QString("Matches: %1/%2 (%.1f%%)\nAvg Error: %.2f px\nRMS Error: %.2f px")
+                          .arg(m_validationResults->totalMatches)
+                          .arg(m_validationResults->totalDetected)
+                          .arg(m_validationResults->matchPercentage)
+                          .arg(m_validationResults->averagePositionError, 0, 'f', 2)
+                          .arg(m_validationResults->rmsPositionError, 0, 'f', 2);
+        
+        QFontMetrics fm(painter.font());
+        QRect statsRect = fm.boundingRect(QRect(0, 0, 200, 100), Qt::TextWordWrap, statsText);
+        statsRect.moveTopRight(QPoint(painter.device()->width() - 10, 10));
+        statsRect.adjust(-5, -5, 5, 5);
+        
+        painter.fillRect(statsRect, QColor(0, 0, 0, 200));
+        painter.setPen(Qt::white);
+        painter.drawText(statsRect, Qt::TextWordWrap, statsText);
+    }
 }
 
 // Add the new slot method:
@@ -413,83 +699,6 @@ void ImageDisplayWidget::onStretchChanged()
     if (m_imageData) {
         updateDisplay();
     }
-}
-
-void ImageDisplayWidget::updateDisplay()
-{
-    if (!m_imageData || !m_imageData->isValid()) {
-        m_imageLabel->clear();
-        m_imageLabel->setText("No image loaded");
-        return;
-    }
-    
-    qDebug() << "Updating display - zoom factor:" << m_zoomFactor;
-    
-    m_currentPixmap = createPixmapFromImageData();
-    
-    if (m_currentPixmap.isNull()) {
-        qDebug() << "Failed to create pixmap from image data";
-        return;
-    }
-    
-    qDebug() << "Original pixmap size:" << m_currentPixmap.size();
-    
-    // Apply zoom scaling
-    QSize scaledSize = m_currentPixmap.size() * m_zoomFactor;
-    qDebug() << "Scaled size:" << scaledSize;
-    
-    QPixmap displayPixmap;
-    if (std::abs(m_zoomFactor - 1.0) > 0.001) {
-        // Only scale if zoom factor is not 1.0
-        displayPixmap = m_currentPixmap.scaled(scaledSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    } else {
-        displayPixmap = m_currentPixmap;
-    }
-    
-    // Handle star overlay
-    if (m_showStars && !m_starCenters.isEmpty()) {
-        qDebug() << "Drawing star overlay with" << m_starCenters.size() << "stars";
-        
-        QPixmap overlayPixmap = displayPixmap;  // Work with the scaled pixmap
-        QPainter painter(&overlayPixmap);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(Qt::green, 2));  // Make stars more visible
-        
-        // Scale factors for star positions
-        double xScale = double(displayPixmap.width()) / m_imageData->width;
-        double yScale = double(displayPixmap.height()) / m_imageData->height;
-        
-        qDebug() << "Star overlay scale factors:" << xScale << yScale;
-        
-        for (int i = 0; i < m_starCenters.size() && i < m_starRadii.size(); ++i) {
-            const QPoint& pt = m_starCenters[i];
-            float r = m_starRadii[i];
-            
-            // Scale star position and radius
-            QPointF scaledCenter(pt.x() * xScale, pt.y() * yScale);
-            double scaledRadius = r * std::min(xScale, yScale);
-            
-            QRectF ellipse(scaledCenter.x() - scaledRadius,
-                          scaledCenter.y() - scaledRadius,
-                          2 * scaledRadius,
-                          2 * scaledRadius);
-            
-            painter.drawEllipse(ellipse);
-            
-            // Draw center point
-            painter.drawPoint(scaledCenter);
-        }
-        
-        painter.end();
-        m_imageLabel->setPixmap(overlayPixmap);
-    } else {
-        m_imageLabel->setPixmap(displayPixmap);
-    }
-    
-    // Update label size to match pixmap
-    m_imageLabel->resize(displayPixmap.size());
-    
-    qDebug() << "Display updated - label size:" << m_imageLabel->size() << "pixmap size:" << displayPixmap.size();
 }
 
 void ImageDisplayWidget::updateZoomControls()

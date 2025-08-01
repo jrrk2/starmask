@@ -8,7 +8,7 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
 
 # Set up Qt6 automoc
 set(CMAKE_AUTOMOC ON)
@@ -125,13 +125,15 @@ set(PROJECT_INCLUDE_DIRS
 )
 
 set(SOURCES
-    main.cpp
-    MainWindow.cpp
-    StarMaskGenerator.cpp
+    ImageDisplayWidget.cpp
     ImageReader.cpp
     ImageStatistics.cpp
+    main.cpp
+    MainWindow.cpp
     SimplifiedXISFWriter.cpp
-    ImageDisplayWidget.cpp
+    SimplifiedXISFWriter.cpp
+    StarCatalogValidator.cpp
+    StarMaskGenerator.cpp
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
@@ -143,12 +145,14 @@ set(SOURCES
 )
 
 set(HEADERS
-    MainWindow.h
-    StarMaskGenerator.h
-    SimplifiedXISFWriter.h
-    ImageReader.h
     ImageDisplayWidget.h
+    ImageReader.h
     ImageStatistics.h
+    MainWindow.h
+    SimplifiedXISFWriter.h
+    StarCatalogValidator.h
+    StarMaskGenerator.h
+    structuredefinitions.h
     PCLMockAPI.h
     PCLThreadMock.h
 )
@@ -170,11 +174,13 @@ target_include_directories(StarMaskDemo PRIVATE
     ${PROJECT_INCLUDE_DIRS}
     /opt/homebrew/include
     /opt/homebrew/Cellar/eigen/3.4.0_1/include/eigen3
+    /opt/homebrew/Cellar/qt/6.9.0/lib/QtNetwork.framework/Versions/A/Headers
 )
 
 target_link_libraries(StarMaskDemo PRIVATE
     Qt6::Core
     Qt6::Widgets
+    Qt6::Network
     pcl_mock          # Add mock library
     ${PCL_LIBRARY}
     pcl_sha
