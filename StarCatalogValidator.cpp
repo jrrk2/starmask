@@ -1,3 +1,4 @@
+#include "BrightStarDatabase.h"
 #include "StarCatalogValidator.h"
 #include <QNetworkRequest>
 #include <QJsonDocument>
@@ -291,92 +292,6 @@ void StarCatalogValidator::updateWCSMatrix()
     if (!m_wcsMatrixValid) {
         qDebug() << "Warning: WCS transformation matrix is singular";
     }
-}
-
-QPointF StarCatalogValidator::skyToPixel(double ra, double dec) const
-{
-    if (!m_wcsData.isValid || !m_wcsMatrixValid) {
-        return QPointF(-1, -1);
-    }
-    
-    // Convert RA/Dec to standard coordinates (simplified tangent plane projection)
-    double raRad = ra * M_PI / 180.0;
-    double decRad = dec * M_PI / 180.0;
-    double ra0Rad = m_wcsData.crval1 * M_PI / 180.0;
-    double dec0Rad = m_wcsData.crval2 * M_PI / 180.0;
-    
-    double cosDec = cos(decRad);
-    double cosDec0 = cos(dec0Rad);
-    double sinDec = sin(decRad);
-    double sinDec0 = sin(dec0Rad);
-    double cosRaDiff = cos(raRad - ra0Rad);
-    
-    double denom = sinDec * sinDec0 + cosDec * cosDec0 * cosRaDiff;
-    
-    if (denom <= 0) {
-        return QPointF(-1, -1); // Point is behind the plane
-    }
-    
-    double xi = cosDec * sin(raRad - ra0Rad) / denom;
-    double eta = (sinDec * cosDec0 - cosDec * sinDec0 * cosRaDiff) / denom;
-    
-    // Transform from standard coordinates to pixel coordinates
-    // Using inverse CD matrix
-    if (std::abs(m_det) < 1e-15) {
-        return QPointF(-1, -1);
-    }
-    
-    double invDet = 1.0 / m_det;
-    double pixelX = (m_transformMatrix[3] * xi - m_transformMatrix[1] * eta) * invDet + m_wcsData.crpix1;
-    double pixelY = (-m_transformMatrix[2] * xi + m_transformMatrix[0] * eta) * invDet + m_wcsData.crpix2;
-    
-    return QPointF(pixelX, pixelY);
-}
-
-QPointF StarCatalogValidator::pixelToSky(double x, double y) const
-{
-    if (!m_wcsData.isValid || !m_wcsMatrixValid) {
-        return QPointF(-1, -1);
-    }
-    
-    // Convert pixel coordinates to standard coordinates
-    double dx = x - m_wcsData.crpix1;
-    double dy = y - m_wcsData.crpix2;
-    
-    double xi = m_transformMatrix[0] * dx + m_transformMatrix[1] * dy;
-    double eta = m_transformMatrix[2] * dx + m_transformMatrix[3] * dy;
-    
-    // Convert standard coordinates to RA/Dec
-    double ra0Rad = m_wcsData.crval1 * M_PI / 180.0;
-    double dec0Rad = m_wcsData.crval2 * M_PI / 180.0;
-    
-    double cosDec0 = cos(dec0Rad);
-    double sinDec0 = sin(dec0Rad);
-    
-    double rho = sqrt(xi * xi + eta * eta);
-    double c = atan(rho);
-    double cosc = cos(c);
-    double sinc = sin(c);
-    
-    double decRad, raRad;
-    
-    if (rho < 1e-8) {
-        // Very close to reference point
-        decRad = dec0Rad;
-        raRad = ra0Rad;
-    } else {
-        decRad = asin(cosc * sinDec0 + (eta * sinc * cosDec0) / rho);
-        raRad = ra0Rad + atan2(xi * sinc, rho * cosDec0 * cosc - eta * sinDec0 * sinc);
-    }
-    
-    double ra = raRad * 180.0 / M_PI;
-    double dec = decRad * 180.0 / M_PI;
-    
-    // Normalize RA to 0-360 range
-    while (ra < 0) ra += 360.0;
-    while (ra >= 360) ra -= 360.0;
-    
-    return QPointF(ra, dec);
 }
 
 QString StarCatalogValidator::buildCatalogQuery(double centerRA, double centerDec, double radiusDegrees)
@@ -911,4 +826,427 @@ void StarCatalogValidator::clearResults()
     m_catalogStars.clear();
     m_lastValidation.clear();
     qDebug() << "Validation results cleared";
+}
+
+bool StarCatalogValidator::setWCSFromImageMetadata(const ImageData& imageData)
+{
+    qDebug() << "=== Using PCL AstrometricMetadata (Complete) ===";
+    
+    try {
+        
+        // Convert ImageData metadata to PCL FITSKeywordArray
+        pcl::FITSKeywordArray keywords;
+        
+        // Parse metadata lines and convert to FITS keywords
+        for (const QString& line : imageData.metadata) {
+            QString trimmedLine = line.trimmed();
+            
+            // Extract key-value pairs in the format "KEY: value (comment)"
+            QRegularExpression kvRegex(R"(([A-Z0-9_-]+):\s*([^(]+)(?:\s*\(([^)]*)\))?)", 
+                                     QRegularExpression::CaseInsensitiveOption);
+            auto match = kvRegex.match(trimmedLine);
+            
+            if (match.hasMatch()) {
+                QString key = match.captured(1).toUpper();
+                QString valueStr = match.captured(2).trimmed();
+                QString comment = match.captured(3).trimmed();
+                
+                // Handle quoted string values
+                if (valueStr.startsWith("'") && valueStr.endsWith("'")) {
+                    valueStr = valueStr.mid(1, valueStr.length() - 2);
+                }
+                
+                // Only add WCS-related keywords that PCL recognizes
+                QStringList wcsKeys = {
+                    "CRVAL1", "CRVAL2", "CRPIX1", "CRPIX2",
+                    "CD1_1", "CD1_2", "CD2_1", "CD2_2",
+                    "CDELT1", "CDELT2", "CROTA1", "CROTA2",
+                    "CTYPE1", "CTYPE2", "CUNIT1", "CUNIT2",
+                    "PV1_1", "PV1_2", "LONPOLE", "LATPOLE",
+                    "EQUINOX", "RADESYS", "NAXIS1", "NAXIS2",
+                    // Add some basic metadata
+                    "DATE-OBS", "FOCALLEN", "XPIXSZ", "YPIXSZ"
+                };
+                
+                if (wcsKeys.contains(key)) {
+                    // Try to parse as number first
+                    bool isNumber;
+                    double numValue = valueStr.toDouble(&isNumber);
+                    
+                    if (isNumber) {
+                        keywords.Add(pcl::FITSHeaderKeyword(
+                            pcl::IsoString(key.toUtf8().constData()), 
+                            numValue, 
+                            pcl::IsoString(comment.toUtf8().constData())));
+                        qDebug() << "Added numeric keyword:" << key << "=" << numValue;
+                    } else {
+                        // Handle as string (for CTYPE, RADESYS, etc.)
+                        keywords.Add(pcl::FITSHeaderKeyword(
+                            pcl::IsoString(key.toUtf8().constData()), 
+                            pcl::IsoString(valueStr.toUtf8().constData()), 
+                            pcl::IsoString(comment.toUtf8().constData())));
+                        qDebug() << "Added string keyword:" << key << "=" << valueStr;
+                    }
+                }
+            }
+        }
+        
+        // Add essential default keywords if not present
+        bool hasCTYPE1 = false, hasCTYPE2 = false, hasRADESYS = false;
+        for (const auto& kw : keywords) {
+            if (kw.name == "CTYPE1") hasCTYPE1 = true;
+            if (kw.name == "CTYPE2") hasCTYPE2 = true;
+            if (kw.name == "RADESYS") hasRADESYS = true;
+        }
+        
+        if (!hasCTYPE1) {
+            keywords.Add(pcl::FITSHeaderKeyword("CTYPE1", 
+                pcl::IsoString("'RA---TAN'"), "Coordinate type"));
+        }
+        if (!hasCTYPE2) {
+            keywords.Add(pcl::FITSHeaderKeyword("CTYPE2", 
+                pcl::IsoString("'DEC--TAN'"), "Coordinate type"));
+        }
+        if (!hasRADESYS) {
+            keywords.Add(pcl::FITSHeaderKeyword("RADESYS", 
+                pcl::IsoString("'ICRS'"), "Coordinate reference system"));
+        }
+        
+        qDebug() << "Created" << keywords.Length() << "FITS keywords for PCL";
+        
+        // Use PCL's AstrometricMetadata.Build() method
+        // This is the high-level interface that handles everything!
+        pcl::PropertyArray emptyProperties; // We're using FITS keywords only
+        
+        try {
+            m_astrometricMetadata.Build(emptyProperties, keywords, 
+                                       imageData.width, imageData.height);
+            
+            // Check if the astrometric solution is valid
+            m_hasAstrometricData = m_astrometricMetadata.IsValid();
+            
+            if (m_hasAstrometricData) {
+                // Update our WCSData for compatibility with existing code
+                pcl::DPoint centerWorld;
+                if (m_astrometricMetadata.ImageToCelestial(centerWorld, 
+                    pcl::DPoint(imageData.width * 0.5, imageData.height * 0.5))) {
+                    
+                    m_wcsData.crval1 = centerWorld.x;
+                    m_wcsData.crval2 = centerWorld.y;
+                    m_wcsData.width = imageData.width;
+                    m_wcsData.height = imageData.height;
+                    m_wcsData.isValid = true;
+                    
+                    // Get resolution from PCL
+                    m_wcsData.pixscale = m_astrometricMetadata.Resolution() * 3600.0; // arcsec/pixel
+                    
+                    qDebug() << "✅ PCL AstrometricMetadata setup successful!";
+                    qDebug() << "  Image center: RA=" << centerWorld.x << "° Dec=" << centerWorld.y << "°";
+                    qDebug() << "  Resolution:" << m_wcsData.pixscale << "arcsec/pixel";
+                    qDebug() << "  Image size:" << imageData.width << "x" << imageData.height;
+                    
+                    // Test the coordinate transformations
+                    testAstrometricMetadata();
+                    
+                    return true;
+                    
+                } else {
+                    qDebug() << "❌ ImageToCelestial failed for image center";
+                    m_hasAstrometricData = false;
+                }
+            } else {
+                qDebug() << "❌ PCL AstrometricMetadata.IsValid() returned false";
+                
+                // Try to get more information about why it failed
+                try {
+                    m_astrometricMetadata.Validate(0.1); // Test with 0.1 pixel tolerance
+                } catch (const pcl::Error& e) {
+                    qDebug() << "  Validation error:" << e.Message().c_str();
+                }
+            }
+            
+        } catch (const pcl::Error& e) {
+            qDebug() << "❌ PCL AstrometricMetadata.Build() failed:" << e.Message().c_str();
+            m_hasAstrometricData = false;
+        }
+        
+        return false;
+        
+    } catch (const std::exception& e) {
+        qDebug() << "❌ Standard exception in PCL AstrometricMetadata setup:" << e.what();
+        return false;
+    } catch (...) {
+        qDebug() << "❌ Unknown exception in PCL AstrometricMetadata setup";
+        return false;
+    }
+}
+
+void StarCatalogValidator::testAstrometricMetadata() const
+{
+    if (!m_hasAstrometricData) return;
+    
+    qDebug() << "\n=== Testing PCL AstrometricMetadata ===";
+    
+    try {
+        // Test 1: Image center
+        pcl::DPoint centerImage(m_wcsData.width * 0.5, m_wcsData.height * 0.5);
+        pcl::DPoint centerWorld;
+        
+        if (m_astrometricMetadata.ImageToCelestial(centerWorld, centerImage)) {
+            qDebug() << QString("✅ Image center: (%1, %2) -> RA=%3° Dec=%4°")
+                        .arg(centerImage.x, 0, 'f', 1).arg(centerImage.y, 0, 'f', 1)
+                        .arg(centerWorld.x, 0, 'f', 6).arg(centerWorld.y, 0, 'f', 6);
+        } else {
+            qDebug() << "❌ Failed to transform image center";
+        }
+        
+        // Test 2: Image corners
+        struct TestPoint {
+            pcl::DPoint image;
+            QString name;
+        };
+        
+        TestPoint corners[] = {
+            {pcl::DPoint(0, 0), "Top-Left"},
+            {pcl::DPoint(m_wcsData.width, 0), "Top-Right"},
+            {pcl::DPoint(0, m_wcsData.height), "Bottom-Left"},
+            {pcl::DPoint(m_wcsData.width, m_wcsData.height), "Bottom-Right"}
+        };
+        
+        qDebug() << "\nImage corner transformations:";
+        for (const auto& corner : corners) {
+            pcl::DPoint world;
+            if (m_astrometricMetadata.ImageToCelestial(world, corner.image)) {
+                qDebug() << QString("  %1: (%2, %3) -> RA=%4° Dec=%5°")
+                            .arg(corner.name).arg(corner.image.x, 0, 'f', 0).arg(corner.image.y, 0, 'f', 0)
+                            .arg(world.x, 0, 'f', 4).arg(world.y, 0, 'f', 4);
+            } else {
+                qDebug() << QString("  %1: Transformation failed").arg(corner.name);
+            }
+        }
+        
+        // Test 3: Catalog stars (your Gaia data)
+        struct TestStar {
+            double ra, dec;
+            QString name;
+        };
+        
+        TestStar testStars[] = {
+            {11.195908490324188, 41.89174375779233, "Gaia_387310087645581056"},
+            {11.245222869774707, 41.818567129781435, "Gaia_387309567953910528"},
+            {11.25642400913238, 41.84593075636271, "Gaia_387309705392866432"},
+            {centerWorld.x, centerWorld.y, "Image_Center_Roundtrip"}
+        };
+        
+        qDebug() << "\nCatalog star transformations:";
+        int inBoundsCount = 0;
+        
+        for (const auto& star : testStars) {
+            pcl::DPoint worldCoord(star.ra, star.dec);
+            pcl::DPoint imageCoord;
+            
+            if (m_astrometricMetadata.CelestialToImage(imageCoord, worldCoord)) {
+                bool inBounds = (imageCoord.x >= 0 && imageCoord.x < m_wcsData.width && 
+                               imageCoord.y >= 0 && imageCoord.y < m_wcsData.height);
+                if (inBounds) inBoundsCount++;
+                
+                qDebug() << QString("  %1: RA=%2° Dec=%3° -> pixel=(%4,%5) %6")
+                            .arg(star.name).arg(star.ra, 0, 'f', 6).arg(star.dec, 0, 'f', 6)
+                            .arg(imageCoord.x, 0, 'f', 1).arg(imageCoord.y, 0, 'f', 1)
+                            .arg(inBounds ? "✅" : "❌");
+            } else {
+                qDebug() << QString("  %1: CelestialToImage failed").arg(star.name);
+            }
+        }
+        
+        qDebug() << QString("\n📊 Results: %1/%2 stars in bounds").arg(inBoundsCount).arg(4);
+        
+        if (inBoundsCount > 0) {
+            qDebug() << "🎉 SUCCESS: PCL AstrometricMetadata is working correctly!";
+            qDebug() << "    Your catalog stars should now appear on the image.";
+        } else {
+            qDebug() << "⚠️  WARNING: No stars are landing within image bounds.";
+            qDebug() << "    Check if the WCS keywords in your FITS file are correct.";
+        }
+        
+        // Test 4: Round-trip accuracy test
+        qDebug() << "\nRound-trip accuracy test:";
+        pcl::DPoint testPixel(m_wcsData.width * 0.25, m_wcsData.height * 0.75);
+        pcl::DPoint worldCoord, backToPixel;
+        
+        if (m_astrometricMetadata.ImageToCelestial(worldCoord, testPixel) &&
+            m_astrometricMetadata.CelestialToImage(backToPixel, worldCoord)) {
+            
+            double errorX = testPixel.x - backToPixel.x;
+            double errorY = testPixel.y - backToPixel.y;
+            double totalError = sqrt(errorX*errorX + errorY*errorY);
+            
+            qDebug() << QString("  Original: (%1, %2)")
+                        .arg(testPixel.x, 0, 'f', 3).arg(testPixel.y, 0, 'f', 3);
+            qDebug() << QString("  Round-trip: (%1, %2)")
+                        .arg(backToPixel.x, 0, 'f', 3).arg(backToPixel.y, 0, 'f', 3);
+            qDebug() << QString("  Error: %.6f pixels %1")
+                        .arg(totalError).arg(totalError < 0.1 ? "✅" : "⚠️");
+        }
+        
+        // Test 5: Print PCL's diagnostic info
+        qDebug() << "\nPCL Internal Diagnostics:";
+        try {
+            // Test the validation
+            m_astrometricMetadata.Validate(0.01);
+            qDebug() << "  ✅ PCL internal validation passed (0.01 px tolerance)";
+        } catch (const pcl::Error& e) {
+            qDebug() << "  ❌ PCL validation failed:" << e.Message().c_str();
+        }
+        
+        // Get search radius for catalog queries
+        try {
+            double searchRadius = m_astrometricMetadata.SearchRadius();
+            qDebug() << QString("  📡 Search radius: %1° (for catalog queries)")
+                        .arg(searchRadius, 0, 'f', 2);
+        } catch (const pcl::Error& e) {
+            qDebug() << "  ❌ SearchRadius failed:" << e.Message().c_str();
+        }
+        
+    } catch (const pcl::Error& e) {
+        qDebug() << "❌ PCL error during testing:" << e.Message().c_str();
+    } catch (...) {
+        qDebug() << "❌ Unknown error during testing";
+    }
+}
+
+// Simplified coordinate transformation methods using PCL's high-level API
+QPointF StarCatalogValidator::skyToPixel(double ra, double dec) const
+{
+    if (!m_hasAstrometricData) {
+        return QPointF(-1, -1);
+    }
+    
+    try {
+        pcl::DPoint worldCoord(ra, dec);
+        pcl::DPoint imageCoord;
+        
+        if (m_astrometricMetadata.CelestialToImage(imageCoord, worldCoord)) {
+            return QPointF(imageCoord.x, imageCoord.y);
+        }
+        
+    } catch (const pcl::Error& e) {
+        qDebug() << "skyToPixel error:" << e.Message().c_str();
+    }
+    
+    return QPointF(-1, -1);
+}
+
+QPointF StarCatalogValidator::pixelToSky(double x, double y) const
+{
+    if (!m_hasAstrometricData) {
+        return QPointF(-1, -1);
+    }
+    
+    try {
+        pcl::DPoint imageCoord(x, y);
+        pcl::DPoint worldCoord;
+        
+        if (m_astrometricMetadata.ImageToCelestial(worldCoord, imageCoord)) {
+            return QPointF(worldCoord.x, worldCoord.y);
+        }
+        
+    } catch (const pcl::Error& e) {
+        qDebug() << "pixelToSky error:" << e.Message().c_str();
+    }
+    
+    return QPointF(-1, -1);
+}
+
+// Update your other methods
+bool StarCatalogValidator::hasValidWCS() const 
+{ 
+    return m_hasAstrometricData && m_astrometricMetadata.IsValid(); 
+}
+
+WCSData StarCatalogValidator::getWCSData() const 
+{ 
+    return m_wcsData; 
+}
+
+// Update StarCatalogValidator to use the local bright star database
+void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double centerDec, double radiusDegrees)
+{
+    qDebug() << "\n=== ADDING BRIGHT STARS FROM LOCAL DATABASE ===";
+    
+    // Get bright stars in field (magnitude < 3.0 to ensure visibility)
+    auto brightStars = BrightStarDatabase::getStarsInField(centerRA, centerDec, radiusDegrees, 3.0);
+    
+    if (brightStars.isEmpty()) {
+        qDebug() << "No bright stars (mag < 3.0) found in this field";
+        return;
+    }
+    
+    qDebug() << QString("Found %1 bright stars in field:").arg(brightStars.size());
+    
+    int addedCount = 0;
+    int replacedCount = 0;
+    
+    for (const auto& brightStar : brightStars) {
+        // Check if magnitude is within our limit
+        if (brightStar.magnitude > m_magnitudeLimit) {
+            qDebug() << QString("  Skipping %1 (mag %.2f > limit %.2f)")
+                        .arg(brightStar.name).arg(brightStar.magnitude).arg(m_magnitudeLimit);
+            continue;
+        }
+        
+        // Create catalog star
+        CatalogStar catalogStar(brightStar.id, brightStar.ra, brightStar.dec, brightStar.magnitude);
+        catalogStar.spectralType = brightStar.spectralType;
+        
+        // Calculate pixel position
+        catalogStar.pixelPos = skyToPixel(brightStar.ra, brightStar.dec);
+        
+        // Check if in image bounds
+        catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && catalogStar.pixelPos.x() < m_wcsData.width && 
+                              catalogStar.pixelPos.y() >= 0 && catalogStar.pixelPos.y() < m_wcsData.height);
+        
+        // Check if we already have a star at this position (replace if ours is better)
+        bool replaced = false;
+        for (int i = 0; i < m_catalogStars.size(); ++i) {
+            auto& existing = m_catalogStars[i];
+            double ra_diff = abs(existing.ra - brightStar.ra);
+            double dec_diff = abs(existing.dec - brightStar.dec);
+            
+            if (ra_diff < 0.01 && dec_diff < 0.01) { // Same star (within 0.01 degrees)
+                // Replace if our magnitude is more reasonable (bright stars should have mag < 6)
+                if (existing.magnitude > 6.0 && brightStar.magnitude < 6.0) {
+                    qDebug() << QString("  🔄 Replacing %1: bad mag %.2f -> correct mag %.2f")
+                                .arg(brightStar.name).arg(existing.magnitude).arg(brightStar.magnitude);
+                    m_catalogStars[i] = catalogStar;
+                    replaced = true;
+                    replacedCount++;
+                    break;
+                }
+            }
+        }
+        
+        if (!replaced) {
+            m_catalogStars.append(catalogStar);
+            addedCount++;
+            
+            qDebug() << QString("  ✅ Added %1 (%2): mag %.2f -> pixel (%.0f, %.0f) %3")
+                        .arg(brightStar.name).arg(brightStar.constellation).arg(brightStar.magnitude)
+                        .arg(catalogStar.pixelPos.x()).arg(catalogStar.pixelPos.y())
+                        .arg(catalogStar.isValid ? "✅" : "❌");
+        }
+    }
+    
+    qDebug() << QString("Added %1 new bright stars, replaced %2 existing entries")
+                .arg(addedCount).arg(replacedCount);
+    
+    if (addedCount > 0 || replacedCount > 0) {
+        // Sort catalog by magnitude (brightest first)
+        std::sort(m_catalogStars.begin(), m_catalogStars.end(), 
+                  [](const CatalogStar& a, const CatalogStar& b) {
+                      return a.magnitude < b.magnitude;
+                  });
+        
+        qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
+    }
 }

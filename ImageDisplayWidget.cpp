@@ -335,32 +335,6 @@ void ImageDisplayWidget::drawStarOverlay(QPainter& painter, double xScale, doubl
     }
 }
 
-void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
-{
-    painter.setPen(QPen(Qt::blue, 2));
-    painter.setBrush(Qt::NoBrush);
-    
-    for (const auto& star : m_validationResults->catalogStars) {
-        if (!star.isValid) continue;
-        
-        QPointF scaledPos(star.pixelPos.x() * xScale, star.pixelPos.y() * yScale);
-        
-        // Draw square marker for catalog stars
-        double size = 6.0;
-        QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
-        painter.drawRect(rect);
-        
-        // Draw center point
-        painter.drawPoint(scaledPos);
-        
-        // Draw magnitude label for bright stars
-        if (star.magnitude < 8.0) {
-            painter.drawText(scaledPos + QPointF(8, -8), 
-                           QString::number(star.magnitude, 'f', 1));
-        }
-    }
-}
-
 void ImageDisplayWidget::drawValidationOverlay(QPainter& painter, double xScale, double yScale)
 {
     painter.setPen(QPen(Qt::yellow, 2));
@@ -596,38 +570,6 @@ void ImageDisplayWidget::wheelEvent(QWheelEvent* event)
     }
 }
 
-void ImageDisplayWidget::mousePressEvent(QMouseEvent* event)
-{
-    if (event->button() == Qt::LeftButton && m_imageData && !m_currentPixmap.isNull()) {
-        // Calculate image coordinates
-        QPoint labelPos = event->pos() - m_imageLabel->pos();
-        QSize pixmapSize = m_currentPixmap.size();
-        QSize labelSize = m_imageLabel->size();
-        
-        // Account for centering
-        int offsetX = (labelSize.width() - pixmapSize.width()) / 2;
-        int offsetY = (labelSize.height() - pixmapSize.height()) / 2;
-        
-        int pixmapX = labelPos.x() - offsetX;
-        int pixmapY = labelPos.y() - offsetY;
-        
-        // Convert to original image coordinates
-        int imageX = static_cast<int>(pixmapX / m_zoomFactor);
-        int imageY = static_cast<int>(pixmapY / m_zoomFactor);
-        
-        if (imageX >= 0 && imageX < m_imageData->width && 
-            imageY >= 0 && imageY < m_imageData->height) {
-            
-            int pixelIndex = imageY * m_imageData->width + imageX;
-            float pixelValue = m_imageData->pixels[pixelIndex];
-            
-            emit imageClicked(imageX, imageY, pixelValue);
-        }
-    }
-    
-    QWidget::mousePressEvent(event);
-}
-
 void ImageDisplayWidget::onZoomInClicked()
 {
     setZoomFactor(m_zoomFactor * 1.5);
@@ -772,4 +714,125 @@ void ImageDisplayWidget::stretchImageData(const float* input, float* output, siz
         double stretched = (input[i] - minVal) * scale;
         output[i] = static_cast<float>(std::clamp(stretched, 0.0, 1.0));
     }
+}
+
+// Add these methods to ImageDisplayWidget.cpp to help visualize alignment issues
+
+void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
+{
+    painter.setPen(QPen(Qt::blue, 2));
+    painter.setBrush(Qt::NoBrush);
+    
+    // Draw different markers for different brightness ranges
+    for (const auto& star : m_validationResults->catalogStars) {
+        if (!star.isValid) continue;
+        
+        QPointF scaledPos(star.pixelPos.x() * xScale, star.pixelPos.y() * yScale);
+        
+        // Use different colors/sizes based on magnitude
+        if (star.magnitude < 8.0) {
+            // Very bright stars - larger red squares
+            painter.setPen(QPen(Qt::red, 3));
+            double size = 10.0;
+            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
+            painter.drawRect(rect);
+            
+            // Draw magnitude label for bright stars
+            painter.setPen(QPen(Qt::red, 1));
+            painter.drawText(scaledPos + QPointF(12, -8), 
+                           QString("mag %1").arg(star.magnitude, 0, 'f', 1));
+            
+        } else if (star.magnitude < 10.0) {
+            // Bright stars - medium blue squares
+            painter.setPen(QPen(Qt::cyan, 2));
+            double size = 8.0;
+            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
+            painter.drawRect(rect);
+            
+        } else {
+            // Faint stars - small blue squares
+            painter.setPen(QPen(Qt::blue, 1));
+            double size = 6.0;
+            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
+            painter.drawRect(rect);
+        }
+        
+        // Always draw center point
+        painter.setPen(QPen(Qt::white, 1));
+        painter.drawPoint(scaledPos);
+    }
+    
+    // Draw image center cross for reference
+    painter.setPen(QPen(Qt::yellow, 2));
+    double centerX = m_imageData->width * 0.5 * xScale;
+    double centerY = m_imageData->height * 0.5 * yScale;
+    double crossSize = 20;
+    
+    painter.drawLine(centerX - crossSize, centerY, centerX + crossSize, centerY);
+    painter.drawLine(centerX, centerY - crossSize, centerX, centerY + crossSize);
+    
+    // Draw coordinate grid for reference
+    painter.setPen(QPen(Qt::darkGray, 1, Qt::DashLine));
+    
+    // Vertical lines every 200 pixels
+    for (int x = 200; x < m_imageData->width; x += 200) {
+        painter.drawLine(x * xScale, 0, x * xScale, m_imageData->height * yScale);
+    }
+    
+    // Horizontal lines every 200 pixels  
+    for (int y = 200; y < m_imageData->height; y += 200) {
+        painter.drawLine(0, y * yScale, m_imageData->width * xScale, y * yScale);
+    }
+}
+
+// Add this method to help measure alignment manually
+void ImageDisplayWidget::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && m_imageData && !m_currentPixmap.isNull()) {
+        // Calculate image coordinates
+        QPoint labelPos = event->pos() - m_imageLabel->pos();
+        QSize pixmapSize = m_currentPixmap.size();
+        QSize labelSize = m_imageLabel->size();
+        
+        // Account for centering
+        int offsetX = (labelSize.width() - pixmapSize.width()) / 2;
+        int offsetY = (labelSize.height() - pixmapSize.height()) / 2;
+        
+        int pixmapX = labelPos.x() - offsetX;
+        int pixmapY = labelPos.y() - offsetY;
+        
+        // Convert to original image coordinates
+        int imageX = static_cast<int>(pixmapX / m_zoomFactor);
+        int imageY = static_cast<int>(pixmapY / m_zoomFactor);
+        
+        if (imageX >= 0 && imageX < m_imageData->width && 
+            imageY >= 0 && imageY < m_imageData->height) {
+            
+            int pixelIndex = imageY * m_imageData->width + imageX;
+            float pixelValue = m_imageData->pixels[pixelIndex];
+            
+            // Check for nearby catalog stars
+            QString nearbyStars = "";
+            if (m_validationResults && !m_validationResults->catalogStars.isEmpty()) {
+                for (const auto& star : m_validationResults->catalogStars) {
+                    if (!star.isValid) continue;
+                    
+                    double distance = sqrt(pow(star.pixelPos.x() - imageX, 2) + 
+                                         pow(star.pixelPos.y() - imageY, 2));
+                    
+                    if (distance < 20.0) { // Within 20 pixels
+                        nearbyStars += QString("\nNearby: %1 (mag %.1f, %.1fpx away)")
+                                      .arg(star.id).arg(star.magnitude).arg(distance);
+                    }
+                }
+            }
+            
+            qDebug() << QString("Clicked: (%1, %2) value=%.3f%3")
+                        .arg(imageX).arg(imageY).arg(pixelValue).arg(nearbyStars);
+            
+            emit imageClicked(imageX, imageY, pixelValue);
+        }
+    }
+    
+    QWidget::mousePressEvent(event);
 }

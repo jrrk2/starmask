@@ -433,6 +433,7 @@ void MainWindow::updatePlottingControls()
 
 // ... [Rest of the existing methods remain the same] ...
 
+// Update the MainWindow to use the simplified method
 void MainWindow::extractWCSFromImage()
 {
     m_hasWCS = false;
@@ -442,27 +443,28 @@ void MainWindow::extractWCSFromImage()
         return;
     }
     
-    // Try to extract WCS from metadata
-    m_catalogValidator->setWCSFromMetadata(m_imageData->metadata);
-    m_hasWCS = m_catalogValidator->hasValidWCS();
+    qDebug() << "=== Using PCL Native WCS Extraction ===";
+    
+    // Use PCL's native WCS parsing instead of custom parsing
+    m_hasWCS = m_catalogValidator->setWCSFromImageMetadata(*m_imageData);
     
     // Update WCS status display
     QLabel* wcsLabel = findChild<QLabel*>("wcsStatusLabel");
     if (wcsLabel) {
         if (m_hasWCS) {
             WCSData wcs = m_catalogValidator->getWCSData();
-            wcsLabel->setText(QString("WCS Status: Available\nRA: %1°, Dec: %2°\nPixel Scale: %3 arcsec/px")
+            wcsLabel->setText(QString("WCS Status: Available (PCL)\nRA: %1°, Dec: %2°\nPixel Scale: %3 arcsec/px")
                             .arg(wcs.crval1, 0, 'f', 4)
                             .arg(wcs.crval2, 0, 'f', 4)
                             .arg(wcs.pixscale, 0, 'f', 2));
             wcsLabel->setStyleSheet("QLabel { color: green; font-weight: bold; }");
         } else {
-            wcsLabel->setText("WCS Status: Not available");
+            wcsLabel->setText("WCS Status: Failed (PCL)");
             wcsLabel->setStyleSheet("QLabel { color: red; font-weight: bold; }");
         }
     }
     
-    qDebug() << "WCS extraction completed, valid:" << m_hasWCS;
+    qDebug() << "PCL WCS extraction completed, valid:" << m_hasWCS;
 }
 
 void MainWindow::onDetectStars()
@@ -582,6 +584,7 @@ void MainWindow::onCatalogQueryStarted()
     m_statusLabel->setText("Querying star catalog...");
 }
 
+// Replace your existing onCatalogQueryFinished method with this:
 void MainWindow::onCatalogQueryFinished(bool success, const QString& message)
 {
     m_queryProgressBar->setVisible(false);
@@ -590,16 +593,21 @@ void MainWindow::onCatalogQueryFinished(bool success, const QString& message)
     
     if (success) {
         m_catalogQueried = true;
-        m_statusLabel->setText(message);
+        
+        // Add bright stars from local database (this always works!)
+        WCSData wcs = m_catalogValidator->getWCSData();
+        double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+        fieldRadius = std::max(fieldRadius, 0.5);
+        
+        m_catalogValidator->addBrightStarsFromDatabase(wcs.crval1, wcs.crval2, fieldRadius);
+        
+        m_statusLabel->setText(QString("Retrieved %1 catalog stars (including bright stars)")
+                               .arg(m_catalogValidator->getCatalogStars().size()));
         
         if (m_plotMode) {
-            // Automatically plot catalog after successful query in plot mode
             plotCatalogStarsDirectly();
-        } else {
-            // Automatically perform validation after successful catalog query in validation mode
-            if (m_starsDetected) {
-                performValidation();
-            }
+        } else if (m_starsDetected) {
+            performValidation();
         }
     } else {
         m_statusLabel->setText("Catalog query failed: " + message);

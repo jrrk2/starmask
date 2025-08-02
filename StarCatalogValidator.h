@@ -12,6 +12,11 @@
 #include <QJsonArray>
 #include <memory>
 
+#include <pcl/WCSKeywords.h>
+#include <pcl/LinearTransformation.h>
+#include <pcl/AstrometricMetadata.h>
+#include "ImageReader.h"
+
 struct WCSData {
     double crval1 = 0.0;    // Reference RA (degrees)
     double crval2 = 0.0;    // Reference Dec (degrees)
@@ -132,10 +137,14 @@ public:
     // WCS handling
     bool setWCSData(const WCSData& wcs);
     void setWCSFromMetadata(const QStringList& metadata);
-    WCSData getWCSData() const { return m_wcsData; }
-    bool hasValidWCS() const { return m_wcsData.isValid; }
+    WCSData getWCSData() const;
+    bool hasValidWCS() const;
     
     // Coordinate transformations
+    bool setWCSFromPCLKeywords(const pcl::FITSKeywordArray& keywords);
+    bool setWCSFromImageMetadata(const ImageData& imageData);  // NEW: Direct from ImageData
+    
+    // PCL-based coordinate transformations
     QPointF skyToPixel(double ra, double dec) const;
     QPointF pixelToSky(double x, double y) const;
     
@@ -143,7 +152,9 @@ public:
     void queryCatalog(double centerRA, double centerDec, double radiusDegrees);
     void loadCustomCatalog(const QString& filePath);
     void loadCustomCatalog(const QVector<CatalogStar>& stars);
-    
+  //    void identifyBrightStars() const;
+    void addBrightStarsFromDatabase(double centerRA, double centerDec, double radiusDegrees);
+  
     // Validation
     ValidationResult validateStars(const QVector<QPoint>& detectedStars, 
                                    const QVector<float>& starRadii = QVector<float>());
@@ -168,6 +179,12 @@ private slots:
     void onNetworkError(QNetworkReply::NetworkError error);
     
 private:
+    // Replace complex WCS handling with PCL's high-level class
+    pcl::AstrometricMetadata m_astrometricMetadata;
+    bool m_hasAstrometricData = false;
+    
+    // Helper methods
+    void testAstrometricMetadata() const;
     // Configuration
     CatalogSource m_catalogSource;
     ValidationMode m_validationMode;
@@ -201,9 +218,11 @@ private:
     
     // WCS transformation helpers
     void updateWCSMatrix();
+    void testPCLWCS() const;
     bool m_wcsMatrixValid;
     double m_transformMatrix[4]; // 2x2 transformation matrix
     double m_det; // Determinant for inverse transformation
+    // Use PCL's native WCS objects
 };
 
 #endif // STAR_CATALOG_VALIDATOR_H
