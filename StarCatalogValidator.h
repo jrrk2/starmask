@@ -163,6 +163,7 @@ public:
     // Results access
     ValidationResult getLastValidation() const { return m_lastValidation; }
     QVector<CatalogStar> getCatalogStars() const { return m_catalogStars; }
+    void showCatalogStats() const;
     
     // Utility
     QString getValidationSummary() const;
@@ -207,7 +208,6 @@ private:
     void parseCatalogResponse(const QByteArray& data);
     void parseHipparcosData(const QJsonArray& stars);
     void parseGaiaData(const QJsonArray& stars);
-  //    void parseVOTableData(const QString& xmlData);
     double parseCoordinate(const QString& coordStr, bool isRA) const;
     
     ValidationResult performMatching(const QVector<QPoint>& detectedStars, 
@@ -215,7 +215,10 @@ private:
     double calculateDistance(const QPoint& detected, const QPointF& catalog) const;
     bool isGoodMatch(double distance, double magnitudeDiff) const;
     void calculateStatistics(ValidationResult& result) const;
-    
+    void queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees);
+    void initializeLocal2MASS();
+    void queryLocal2MASS(double centerRA, double centerDec, double radiusDegrees);
+  
     // WCS transformation helpers
     void updateWCSMatrix();
     void testPCLWCS() const;

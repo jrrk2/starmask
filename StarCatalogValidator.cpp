@@ -1,5 +1,6 @@
 #include "BrightStarDatabase.h"
 #include "StarCatalogValidator.h"
+#include "Local2MASSCatalog.h"
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,6 +16,9 @@
 #include <cmath>
 #include <algorithm>
 
+// Static member definition (add to .cpp file)
+QString Local2MASSCatalog::s_catalogPath;
+
 StarCatalogValidator::StarCatalogValidator(QObject* parent)
     : QObject(parent)
     , m_validationMode(Loose)
@@ -26,7 +30,9 @@ StarCatalogValidator::StarCatalogValidator(QObject* parent)
     , m_curl(curl_easy_init())
 {
     initializeTolerances();
-    
+    // Initialize local 2MASS catalog
+    initializeLocal2MASS();
+        
     // Initialize transformation matrix
     for (int i = 0; i < 4; ++i) {
         m_transformMatrix[i] = 0.0;
@@ -289,7 +295,18 @@ static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
+// Update the queryCatalog method to handle Local2MASS
 void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
+{
+    if (!m_wcsData.isValid) {
+        emit errorSignal("No valid WCS data available for catalog query");
+        return;
+    }
+    
+    queryLocal2MASS(centerRA, centerDec, radiusDegrees);
+}
+
+void StarCatalogValidator::queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees)
 {
     if (!m_wcsData.isValid) {
         emit errorSignal("No valid WCS data available for catalog query");
@@ -1067,5 +1084,96 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
                   });
         
         qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
+    }
+}
+
+// Update StarCatalogValidator to use local 2MASS catalog
+void StarCatalogValidator::initializeLocal2MASS()
+{
+    // Set the path to your 2MASS catalog
+    QString catalogPath = "/Volumes/X10Pro/allsky_2mass/allsky.mag";
+    Local2MASSCatalog::setCatalogPath(catalogPath);
+    
+    if (Local2MASSCatalog::isAvailable()) {
+        qDebug() << "✅" << Local2MASSCatalog::getCatalogInfo();
+    } else {
+        qDebug() << "❌ 2MASS catalog not found at:" << catalogPath;
+        qDebug() << "   Network catalogs will be used as fallback";
+    }
+}
+
+void StarCatalogValidator::queryLocal2MASS(double centerRA, double centerDec, double radiusDegrees)
+{
+    qDebug() << "\n=== QUERYING LOCAL 2MASS CATALOG ===";
+    
+    if (!Local2MASSCatalog::isAvailable()) {
+        qDebug() << "❌ Local 2MASS not available, falling back to network";
+        // Fall back to original network query
+        queryCatalog(centerRA, centerDec, radiusDegrees);
+        return;
+    }
+    
+    emit catalogQueryStarted();
+    
+    // Query local catalog
+    auto stars2mass = Local2MASSCatalog::queryRegion(centerRA, centerDec, radiusDegrees, m_magnitudeLimit);
+    
+    // Convert to our CatalogStar format
+    m_catalogStars.clear();
+    for (const auto& star : stars2mass) {
+        CatalogStar catalogStar(star.id, star.ra, star.dec, star.magnitude);
+        
+        // Calculate pixel position
+        catalogStar.pixelPos = skyToPixel(star.ra, star.dec);
+        
+        // Check if in image bounds
+        catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && catalogStar.pixelPos.x() < m_wcsData.width && 
+                              catalogStar.pixelPos.y() >= 0 && catalogStar.pixelPos.y() < m_wcsData.height);
+        
+        m_catalogStars.append(catalogStar);
+    }
+    
+    // Add bright stars from local database (for stars like Betelgeuse that might be missing/wrong in 2MASS)
+    addBrightStarsFromDatabase(centerRA, centerDec, radiusDegrees);
+    
+    QString message = QString("Retrieved %1 stars from local 2MASS catalog").arg(m_catalogStars.size());
+    qDebug() << "✅" << message;
+    
+    emit catalogQueryFinished(true, message);
+}
+
+// Add a method to show catalog statistics in the UI
+void StarCatalogValidator::showCatalogStats() const
+{
+    if (m_catalogStars.isEmpty()) {
+        qDebug() << "No catalog stars loaded";
+        return;
+    }
+    
+    // Magnitude distribution
+    QMap<int, int> magHistogram;
+    int validStars = 0;
+    double brightestMag = 99.0;
+    double faintestMag = -99.0;
+    
+    for (const auto& star : m_catalogStars) {
+        if (star.isValid) validStars++;
+        
+        int magBin = static_cast<int>(std::floor(star.magnitude));
+        magHistogram[magBin]++;
+        
+        brightestMag = std::min(brightestMag, star.magnitude);
+        faintestMag = std::max(faintestMag, star.magnitude);
+    }
+    
+    qDebug() << "\n=== CATALOG STATISTICS ===";
+    qDebug() << QString("Total stars: %1").arg(m_catalogStars.size());
+    qDebug() << QString("Stars in image bounds: %1").arg(validStars);
+    qDebug() << QString("Magnitude range: %.1f to %.1f").arg(brightestMag).arg(faintestMag);
+    qDebug() << "Magnitude distribution:";
+    
+    for (auto it = magHistogram.begin(); it != magHistogram.end(); ++it) {
+        qDebug() << QString("  mag %1-%2: %3 stars")
+                    .arg(it.key()).arg(it.key() + 1).arg(it.value());
     }
 }

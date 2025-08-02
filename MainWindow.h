@@ -62,7 +62,11 @@ private:
     void plotCatalogStarsDirectly();      // NEW: Direct catalog plotting
     void debugCatalogQuery();
     void addDebugButton();
-  
+  void setup2MASSCatalog();
+  void browseCatalogFile();
+  void setupCatalogMenu();
+  void compareCatalogPerformance();
+
     // UI Components
     QWidget* m_centralWidget;
     QVBoxLayout* m_mainLayout;
