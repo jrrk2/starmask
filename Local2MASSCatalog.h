@@ -41,8 +41,9 @@ public:
         }
         
         qDebug() << QString("📂 Reading 2MASS catalog from: %1").arg(s_catalogPath);
-        qDebug() << QString("🎯 Query region: RA=%.4f° Dec=%.4f° radius=%.2f° mag≤%.1f")
-                    .arg(centerRA).arg(centerDec).arg(radiusDegrees).arg(maxMagnitude);
+        qDebug() << QString("🎯 Query region: RA=%1° Dec=%2° radius=%3° mag≤%4")
+                    .arg(centerRA, 0, 'f', 4).arg(centerDec, 0, 'f', 4)
+                    .arg(radiusDegrees, 0, 'f', 2).arg(maxMagnitude, 0, 'f', 1);
         
         auto startTime = QTime::currentTime();
         
@@ -50,7 +51,7 @@ public:
         double minDec = centerDec - radiusDegrees;
         double maxDec = centerDec + radiusDegrees;
         
-        qDebug() << QString("📍 Dec search bounds: [%.4f°, %.4f°]").arg(minDec).arg(maxDec);
+        qDebug() << QString("📍 Dec search bounds: [%1°, %2°]").arg(minDec, 0, 'f', 4).arg(maxDec, 0, 'f', 4);
         
         // Binary search to find the start position
         qint64 startPos = findDeclinationStart(file, minDec);
@@ -101,8 +102,8 @@ public:
             
             // Early exit if we've passed the maximum declination
             if (dec > maxDec) {
-                qDebug() << QString("📈 Reached max declination %.4f° at line %2, stopping search")
-                            .arg(dec).arg(totalLines);
+                qDebug() << QString("📈 Reached max declination %1° at line %2, stopping search")
+                            .arg(dec, 0, 'f', 4).arg(totalLines);
                 break;
             }
             
@@ -180,11 +181,11 @@ public:
         qint64 right = fileSize;
         qint64 bestPos = 0;
         
-        qDebug() << QString("🔍 Binary search for Dec >= %.4f° in %1 MB file")
-                    .arg(targetDec).arg(fileSize / (1024 * 1024));
+        qDebug() << QString("🔍 Binary search for Dec >= %1° in %2 MB file")
+                    .arg(targetDec, 0, 'f', 4).arg(fileSize / (1024 * 1024));
         
         int iterations = 0;
-        const int maxIterations = 50; // Safety limit
+        const int maxIterations = 35; // log2(20GB) ≈ 34 iterations max
         
         while (left < right && iterations < maxIterations) {
             iterations++;
@@ -206,15 +207,39 @@ public:
                 continue;
             }
             
-            qDebug() << QString("   Iteration %1: pos=%2, dec=%.4f° (target=%.4f°)")
-                        .arg(iterations).arg(lineStart).arg(dec).arg(targetDec);
+            // Only log every few iterations to reduce noise
+            if (iterations <= 10 || iterations % 5 == 0) {
+                qDebug() << QString("   Iteration %1: pos=%2, dec=%3° (target=%4°)")
+                            .arg(iterations).arg(lineStart).arg(dec, 0, 'f', 4).arg(targetDec, 0, 'f', 4);
+            }
             
             if (dec >= targetDec) {
                 bestPos = lineStart;
                 right = mid;
+                
+                // Early exit if we're very close to the target
+                if (std::abs(dec - targetDec) < 0.001) {
+                    qDebug() << QString("   🎯 Found very close match at iteration %1").arg(iterations);
+                    break;
+                }
             } else {
                 left = mid + 1;
             }
+            
+            // Detect infinite loops (same position)
+            static qint64 lastPos = -1;
+            static int sameCount = 0;
+            
+            if (lineStart == lastPos) {
+                sameCount++;
+                if (sameCount > 3) {
+                    qDebug() << QString("⚠️  Breaking infinite loop at position %1").arg(lineStart);
+                    break;
+                }
+            } else {
+                sameCount = 0;
+            }
+            lastPos = lineStart;
         }
         
         qDebug() << QString("🎯 Binary search completed in %1 iterations, found position %2")
@@ -229,7 +254,7 @@ public:
         if (position <= 0) return 0;
         
         // Read backwards to find the previous newline
-        qint64 searchStart = std::max(0LL, position - 200); // Look back up to 200 chars
+        qint64 searchStart = std::max(0LL, position - 500); // Look back up to 500 chars
         file.seek(searchStart);
         
         QByteArray chunk = file.read(position - searchStart + 200);
@@ -241,7 +266,11 @@ public:
         if (lastNewline >= 0) {
             return searchStart + lastNewline + 1;
         } else {
-            return searchStart; // No newline found, use the beginning
+            // No newline found, try going back further
+            if (searchStart > 0) {
+                return findLineStart(file, searchStart);
+            }
+            return 0; // Beginning of file
         }
     }
     
