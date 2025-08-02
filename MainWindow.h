@@ -11,6 +11,8 @@
 #include <QGroupBox>
 #include <QProgressBar>
 #include <QTextEdit>
+#include <QCheckBox>
+#include <QDoubleSpinBox>
 #include <memory>
 
 #include "ImageReader.h"
@@ -30,10 +32,12 @@ private slots:
     void onLoadImage();
     void onDetectStars();
     void onValidateStars();
+    void onPlotCatalogStars();  // NEW: Direct catalog plotting
     void onCatalogSourceChanged();
     void onValidationModeChanged();
     void onMagnitudeLimitChanged();
     void onPixelToleranceChanged();
+    void onPlotModeToggled(bool plotMode);  // NEW: Toggle between modes
     
     // Star catalog validator slots
     void onCatalogQueryStarted();
@@ -49,11 +53,16 @@ private slots:
 private:
     void setupUI();
     void setupValidationControls();
+    void setupCatalogPlottingControls();  // NEW: Setup plotting controls
     void updateValidationControls();
+    void updatePlottingControls();        // NEW: Update plotting controls
     void updateStatusDisplay();
     void extractWCSFromImage();
     void runStarDetection();
     void performValidation();
+    void plotCatalogStarsDirectly();      // NEW: Direct catalog plotting
+    void debugCatalogQuery();
+    void addDebugButton();
   
     // UI Components
     QWidget* m_centralWidget;
@@ -65,10 +74,22 @@ private:
     QPushButton* m_loadButton;
     QPushButton* m_detectButton;
     QPushButton* m_validateButton;
+    QPushButton* m_plotCatalogButton;     // NEW: Plot catalog button
+    
+    // Mode controls
+    QCheckBox* m_plotModeCheck;           // NEW: Toggle plot mode
     
     // Validation controls
     QGroupBox* m_validationGroup;
     QVBoxLayout* m_validationLayout;
+    
+    // Catalog plotting controls
+    QGroupBox* m_plottingGroup;           // NEW: Plotting controls group
+    QVBoxLayout* m_plottingLayout;        // NEW: Plotting layout
+    QComboBox* m_plotCatalogSourceCombo;  // NEW: Catalog source for plotting
+    QDoubleSpinBox* m_plotMagnitudeSpin;  // NEW: Magnitude limit for plotting
+    QDoubleSpinBox* m_fieldRadiusSpin;    // NEW: Field radius control
+    
     QComboBox* m_catalogSourceCombo;
     QComboBox* m_validationModeCombo;
     QSpinBox* m_magnitudeLimitSpin;
@@ -94,6 +115,8 @@ private:
     bool m_starsDetected;
     bool m_catalogQueried;
     bool m_validationComplete;
+    bool m_plotMode;                      // NEW: Plot mode flag
+    bool m_catalogPlotted;                // NEW: Catalog plotted flag
 };
 
 #endif // MAINWINDOW_H

@@ -405,11 +405,15 @@ QString StarCatalogValidator::buildCatalogQuery(double centerRA, double centerDe
         case Gaia:
             // Use ESA Gaia archive (TAP service)
             baseUrl = "https://gea.esac.esa.int/tap-server/tap/sync";
-            query = QString("?REQUEST=doQuery&LANG=ADQL&FORMAT=json&QUERY=SELECT source_id,ra,dec,phot_g_mean_mag FROM gaiadr3.gaia_source WHERE CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',%1,%2,%3))=1 AND phot_g_mean_mag<%4 ORDER BY phot_g_mean_mag")
-                   .arg(centerRA, 0, 'f', 6)
-                   .arg(centerDec, 0, 'f', 6)
-                   .arg(radiusDegrees, 0, 'f', 4)
-                   .arg(m_magnitudeLimit, 0, 'f', 1);
+	    query = QString("?REQUEST=doQuery&LANG=ADQL&FORMAT=json&QUERY="
+			   "SELECT TOP %1 source_id,ra,dec,phot_g_mean_mag "
+			   "FROM gaiadr3.gaia_source "
+			   "WHERE CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',%2,%3,%4))=1 "
+			   "ORDER BY phot_g_mean_mag")
+		   .arg(2000)  // Max results
+		   .arg(centerRA, 0, 'f', 6)
+		   .arg(centerDec, 0, 'f', 6)
+		   .arg(radiusDegrees, 0, 'f', 4);
             break;
             
         default:
@@ -455,7 +459,7 @@ void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, doubl
     // Set a timeout
     QTimer::singleShot(30000, this, [this]() {
         if (m_currentReply && m_currentReply->isRunning()) {
-            m_currentReply->abort();
+	  //            m_currentReply->abort();
             emit errorSignal("Catalog query timed out");
         }
     });

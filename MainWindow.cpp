@@ -13,6 +13,8 @@
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QClipboard>
+#include <QDesktopServices>
 #include <QSplitter>
 #include <QMessageBox>
 #include <QJsonDocument>
@@ -26,6 +28,8 @@ MainWindow::MainWindow(QWidget* parent)
     , m_starsDetected(false)
     , m_catalogQueried(false)
     , m_validationComplete(false)
+    , m_plotMode(false)
+    , m_catalogPlotted(false)
 {
     setupUI();
     
@@ -33,6 +37,10 @@ MainWindow::MainWindow(QWidget* parent)
     connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
     connect(m_detectButton, &QPushButton::clicked, this, &MainWindow::onDetectStars);
     connect(m_validateButton, &QPushButton::clicked, this, &MainWindow::onValidateStars);
+    connect(m_plotCatalogButton, &QPushButton::clicked, this, &MainWindow::onPlotCatalogStars);
+    
+    // Connect mode control
+    connect(m_plotModeCheck, &QCheckBox::toggled, this, &MainWindow::onPlotModeToggled);
     
     // Connect validation control signals
     connect(m_catalogSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -43,6 +51,23 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onMagnitudeLimitChanged);
     connect(m_pixelToleranceSpin, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &MainWindow::onPixelToleranceChanged);
+    
+    // Connect plotting control signals
+    connect(m_plotCatalogSourceCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onCatalogSourceChanged);
+    connect(m_plotMagnitudeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            [this](double value) {
+                m_catalogValidator->setMagnitudeLimit(value);
+                m_catalogQueried = false;
+                m_catalogPlotted = false;
+                updatePlottingControls();
+            });
+    connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            [this](double) {
+                m_catalogQueried = false;
+                m_catalogPlotted = false;
+                updatePlottingControls();
+            });
     
     // Connect catalog validator signals
     connect(m_catalogValidator.get(), &StarCatalogValidator::catalogQueryStarted,
@@ -63,9 +88,10 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onValidationOverlayToggled);
 
     resize(1400, 900);
-    setWindowTitle("Star Detection & Catalog Validation");
+    setWindowTitle("Star Detection & Catalog Validation/Plotting");
     
     updateValidationControls();
+    updatePlottingControls();
 }
 
 MainWindow::~MainWindow() = default;
@@ -90,38 +116,57 @@ void MainWindow::setupUI()
     m_loadButton = new QPushButton("Load Image");
     m_detectButton = new QPushButton("Detect Stars");
     m_validateButton = new QPushButton("Validate with Catalog");
+    m_plotCatalogButton = new QPushButton("Plot Catalog Stars");
     
     m_detectButton->setEnabled(false);
     m_validateButton->setEnabled(false);
+    m_plotCatalogButton->setEnabled(false);
     
     m_buttonLayout->addWidget(m_loadButton);
     m_buttonLayout->addWidget(m_detectButton);
     m_buttonLayout->addWidget(m_validateButton);
+    m_buttonLayout->addWidget(m_plotCatalogButton);
+    QPushButton* debugButton = new QPushButton("Debug Catalog");
+    debugButton->setToolTip("Debug catalog query parameters and test URLs");
+    connect(debugButton, &QPushButton::clicked, this, &MainWindow::debugCatalogQuery);
+    m_buttonLayout->addWidget(debugButton);
+    
     m_buttonLayout->addStretch();
     
     leftLayout->addLayout(m_buttonLayout);
+    
+    // Mode toggle
+    QHBoxLayout* modeLayout = new QHBoxLayout;
+    m_plotModeCheck = new QCheckBox("Catalog Plotting Mode");
+    m_plotModeCheck->setToolTip("Switch between star detection/validation and direct catalog plotting");
+    modeLayout->addWidget(m_plotModeCheck);
+    modeLayout->addStretch();
+    leftLayout->addLayout(modeLayout);
     
     // Status label
     m_statusLabel = new QLabel("Ready - Load an image to begin");
     leftLayout->addWidget(m_statusLabel);
     
-    // Right side - validation controls and results
+    // Right side - controls and results
     QWidget* rightWidget = new QWidget;
     rightWidget->setMaximumWidth(350);
     rightWidget->setMinimumWidth(300);
     QVBoxLayout* rightLayout = new QVBoxLayout(rightWidget);
     
     setupValidationControls();
+    setupCatalogPlottingControls();
+    
     rightLayout->addWidget(m_validationGroup);
+    rightLayout->addWidget(m_plottingGroup);
     
     // Results display
-    QGroupBox* resultsGroup = new QGroupBox("Validation Results");
+    QGroupBox* resultsGroup = new QGroupBox("Results");
     QVBoxLayout* resultsLayout = new QVBoxLayout(resultsGroup);
     
     m_resultsText = new QTextEdit;
     m_resultsText->setMaximumHeight(200);
     m_resultsText->setReadOnly(true);
-    m_resultsText->setPlainText("No validation results yet.\n\nLoad an image with WCS information and detect stars to begin validation.");
+    m_resultsText->setPlainText("No results yet.\n\nLoad an image with WCS information and either:\n- Detect stars for validation, or\n- Plot catalog stars directly");
     
     resultsLayout->addWidget(m_resultsText);
     rightLayout->addWidget(resultsGroup);
@@ -141,7 +186,7 @@ void MainWindow::setupUI()
 
 void MainWindow::setupValidationControls()
 {
-    m_validationGroup = new QGroupBox("Catalog Validation Settings");
+    m_validationGroup = new QGroupBox("Star Detection & Validation");
     m_validationLayout = new QVBoxLayout(m_validationGroup);
     
     // Catalog source selection
@@ -198,6 +243,49 @@ void MainWindow::setupValidationControls()
     m_validationLayout->addWidget(wcsStatusLabel);
 }
 
+void MainWindow::setupCatalogPlottingControls()
+{
+    m_plottingGroup = new QGroupBox("Catalog Plotting");
+    m_plottingLayout = new QVBoxLayout(m_plottingGroup);
+    
+    // Catalog source for plotting
+    QHBoxLayout* plotCatalogLayout = new QHBoxLayout;
+    plotCatalogLayout->addWidget(new QLabel("Catalog Source:"));
+    m_plotCatalogSourceCombo = new QComboBox;
+    m_plotCatalogSourceCombo->addItem("Hipparcos (Bright Stars)", static_cast<int>(StarCatalogValidator::Hipparcos));
+    m_plotCatalogSourceCombo->addItem("Tycho-2", static_cast<int>(StarCatalogValidator::Tycho2));
+    m_plotCatalogSourceCombo->addItem("Gaia DR3", static_cast<int>(StarCatalogValidator::Gaia));
+    m_plotCatalogSourceCombo->addItem("Custom", static_cast<int>(StarCatalogValidator::Custom));
+    plotCatalogLayout->addWidget(m_plotCatalogSourceCombo);
+    m_plottingLayout->addLayout(plotCatalogLayout);
+    
+    // Magnitude limit for plotting
+    QHBoxLayout* plotMagLayout = new QHBoxLayout;
+    plotMagLayout->addWidget(new QLabel("Magnitude Limit:"));
+    m_plotMagnitudeSpin = new QDoubleSpinBox;
+    m_plotMagnitudeSpin->setRange(4.0, 20.0);
+    m_plotMagnitudeSpin->setValue(12.0);
+    m_plotMagnitudeSpin->setDecimals(1);
+    m_plotMagnitudeSpin->setSuffix(" mag");
+    plotMagLayout->addWidget(m_plotMagnitudeSpin);
+    m_plottingLayout->addLayout(plotMagLayout);
+    
+    // Field radius
+    QHBoxLayout* radiusLayout = new QHBoxLayout;
+    radiusLayout->addWidget(new QLabel("Field Radius:"));
+    m_fieldRadiusSpin = new QDoubleSpinBox;
+    m_fieldRadiusSpin->setRange(0.1, 10.0);
+    m_fieldRadiusSpin->setValue(2.0);
+    m_fieldRadiusSpin->setDecimals(1);
+    m_fieldRadiusSpin->setSuffix(" deg");
+    m_fieldRadiusSpin->setToolTip("Search radius around image center");
+    radiusLayout->addWidget(m_fieldRadiusSpin);
+    m_plottingLayout->addLayout(radiusLayout);
+    
+    // Initially hide plotting controls
+    m_plottingGroup->setVisible(false);
+}
+
 void MainWindow::onLoadImage()
 {
     pcl_mock::InitializeMockAPI();
@@ -229,11 +317,14 @@ void MainWindow::onLoadImage()
     
     // Update UI state
     m_detectButton->setEnabled(true);
+    m_plotCatalogButton->setEnabled(m_hasWCS);
     m_starsDetected = false;
     m_catalogQueried = false;
     m_validationComplete = false;
+    m_catalogPlotted = false;
     
     updateValidationControls();
+    updatePlottingControls();
     updateStatusDisplay();
     
     // Clear previous results
@@ -241,6 +332,106 @@ void MainWindow::onLoadImage()
     m_imageDisplayWidget->clearValidationResults();
     m_resultsText->clear();
 }
+
+void MainWindow::onPlotCatalogStars()
+{
+    if (!m_hasWCS) {
+        QMessageBox::warning(this, "Plot Catalog", "No WCS information available. Cannot plot catalog stars.");
+        return;
+    }
+    
+    plotCatalogStarsDirectly();
+}
+
+void MainWindow::plotCatalogStarsDirectly()
+{
+    if (!m_catalogQueried) {
+        // Need to query catalog first
+        WCSData wcs = m_catalogValidator->getWCSData();
+        double fieldRadius = m_fieldRadiusSpin->value();
+        
+        // Set the catalog source from plotting controls
+        auto source = static_cast<StarCatalogValidator::CatalogSource>(
+            m_plotCatalogSourceCombo->currentData().toInt());
+        m_catalogValidator->setCatalogSource(source);
+        
+        // Set magnitude limit from plotting controls
+        m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
+        
+        m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, fieldRadius);
+    } else {
+        // Catalog already queried, just display it
+        QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+        
+        // Create a validation result just for display purposes
+        ValidationResult plotResult;
+        plotResult.catalogStars = catalogStars;
+        plotResult.totalCatalog = catalogStars.size();
+        plotResult.isValid = true;
+        plotResult.summary = QString("Catalog Plot:\n%1 stars plotted (magnitude ≤ %.1f)\nSource: %2")
+                            .arg(catalogStars.size())
+                            .arg(m_plotMagnitudeSpin->value())
+                            .arg(m_plotCatalogSourceCombo->currentText());
+        
+        m_imageDisplayWidget->setValidationResults(plotResult);
+        m_resultsText->setPlainText(plotResult.summary);
+        
+        m_catalogPlotted = true;
+        m_statusLabel->setText(QString("Plotted %1 catalog stars (mag ≤ %.1f)")
+                              .arg(catalogStars.size())
+                              .arg(m_plotMagnitudeSpin->value()));
+        
+        updatePlottingControls();
+    }
+}
+
+void MainWindow::onPlotModeToggled(bool plotMode)
+{
+    m_plotMode = plotMode;
+    
+    // Show/hide appropriate control groups
+    m_validationGroup->setVisible(!plotMode);
+    m_plottingGroup->setVisible(plotMode);
+    
+    // Update button states
+    if (plotMode) {
+        m_detectButton->setVisible(false);
+        m_validateButton->setVisible(false);
+        m_plotCatalogButton->setVisible(true);
+    } else {
+        m_detectButton->setVisible(true);
+        m_validateButton->setVisible(true);
+        m_plotCatalogButton->setVisible(false);
+    }
+    
+    updateValidationControls();
+    updatePlottingControls();
+    
+    // Update status
+    QString modeText = plotMode ? "Catalog Plotting Mode" : "Star Detection & Validation Mode";
+    if (m_imageData) {
+        m_statusLabel->setText(QString("Image loaded - %1").arg(modeText));
+    } else {
+        m_statusLabel->setText(QString("Ready - %1").arg(modeText));
+    }
+}
+
+void MainWindow::updatePlottingControls()
+{
+    bool canPlot = m_hasWCS && m_imageData;
+    m_plotCatalogButton->setEnabled(canPlot && !m_queryProgressBar->isVisible());
+    
+    // Update tooltip
+    if (!m_hasWCS) {
+        m_plotCatalogButton->setToolTip("No WCS information available in image");
+    } else if (!m_imageData) {
+        m_plotCatalogButton->setToolTip("Load an image first");
+    } else {
+        m_plotCatalogButton->setToolTip("Plot catalog stars directly on the image");
+    }
+}
+
+// ... [Rest of the existing methods remain the same] ...
 
 void MainWindow::extractWCSFromImage()
 {
@@ -357,7 +548,9 @@ void MainWindow::onCatalogSourceChanged()
     auto source = static_cast<StarCatalogValidator::CatalogSource>(m_catalogSourceCombo->currentData().toInt());
     m_catalogValidator->setCatalogSource(source);
     m_catalogQueried = false; // Need to re-query with new source
+    m_catalogPlotted = false;
     updateValidationControls();
+    updatePlottingControls();
 }
 
 void MainWindow::onValidationModeChanged()
@@ -370,7 +563,9 @@ void MainWindow::onMagnitudeLimitChanged()
 {
     m_catalogValidator->setMagnitudeLimit(m_magnitudeLimitSpin->value());
     m_catalogQueried = false; // Need to re-query with new limit
+    m_catalogPlotted = false;
     updateValidationControls();
+    updatePlottingControls();
 }
 
 void MainWindow::onPixelToleranceChanged()
@@ -383,26 +578,36 @@ void MainWindow::onCatalogQueryStarted()
     m_queryProgressBar->setVisible(true);
     m_queryProgressBar->setRange(0, 0); // Indeterminate progress
     m_validateButton->setEnabled(false);
+    m_plotCatalogButton->setEnabled(false);
     m_statusLabel->setText("Querying star catalog...");
 }
 
 void MainWindow::onCatalogQueryFinished(bool success, const QString& message)
 {
     m_queryProgressBar->setVisible(false);
-    m_validateButton->setEnabled(m_starsDetected && m_hasWCS);
+    m_validateButton->setEnabled(m_starsDetected && m_hasWCS && !m_plotMode);
+    m_plotCatalogButton->setEnabled(m_hasWCS && m_plotMode);
     
     if (success) {
         m_catalogQueried = true;
         m_statusLabel->setText(message);
         
-        // Automatically perform validation after successful catalog query
-        performValidation();
+        if (m_plotMode) {
+            // Automatically plot catalog after successful query in plot mode
+            plotCatalogStarsDirectly();
+        } else {
+            // Automatically perform validation after successful catalog query in validation mode
+            if (m_starsDetected) {
+                performValidation();
+            }
+        }
     } else {
         m_statusLabel->setText("Catalog query failed: " + message);
         QMessageBox::warning(this, "Catalog Query Error", message);
     }
     
     updateValidationControls();
+    updatePlottingControls();
 }
 
 void MainWindow::onValidationCompleted(const ValidationResult& result)
@@ -430,7 +635,7 @@ void MainWindow::onStarOverlayToggled(bool visible)
 
 void MainWindow::onCatalogOverlayToggled(bool visible)
 {
-    if (!m_catalogQueried) return;
+    if (!m_catalogQueried && !m_catalogPlotted) return;
     
     QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
     QString statusText = QString("Catalog stars %1 (%2 total)")
@@ -441,18 +646,34 @@ void MainWindow::onCatalogOverlayToggled(bool visible)
 
 void MainWindow::onValidationOverlayToggled(bool visible)
 {
-    if (!m_validationComplete) return;
+    if (!m_validationComplete && !m_catalogPlotted) return;
     
-    QString statusText = QString("Validation results %1 (%2 matches)")
-                        .arg(visible ? "visible" : "hidden")
-                        .arg(m_lastValidation.totalMatches);
-    m_statusLabel->setText(statusText);
+    if (m_catalogPlotted) {
+        QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+        QString statusText = QString("Catalog plot %1 (%2 stars)")
+                            .arg(visible ? "visible" : "hidden")
+                            .arg(catalogStars.size());
+        m_statusLabel->setText(statusText);
+    } else {
+        QString statusText = QString("Validation results %1 (%2 matches)")
+                            .arg(visible ? "visible" : "hidden")
+                            .arg(m_lastValidation.totalMatches);
+        m_statusLabel->setText(statusText);
+    }
 }
 
 void MainWindow::updateValidationControls()
 {
+    if (m_plotMode) {
+        // In plot mode, disable validation controls
+        m_validateButton->setEnabled(false);
+        m_detectButton->setEnabled(false);
+        return;
+    }
+    
     bool canValidate = m_starsDetected && m_hasWCS;
     m_validateButton->setEnabled(canValidate && !m_queryProgressBar->isVisible());
+    m_detectButton->setEnabled(m_imageData != nullptr);
     
     // Update tooltip
     if (!m_hasWCS) {
@@ -478,12 +699,21 @@ void MainWindow::updateStatusDisplay()
             status += " (WCS available)";
         }
         
-        if (m_starsDetected) {
-            status += QString(", %1 stars detected").arg(m_lastStarMask.starCenters.size());
-        }
-        
-        if (m_validationComplete) {
-            status += QString(", %1 matched").arg(m_lastValidation.totalMatches);
+        if (m_plotMode) {
+            status += " - Catalog Plotting Mode";
+            if (m_catalogPlotted) {
+                QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+                status += QString(", %1 stars plotted").arg(catalogStars.size());
+            }
+        } else {
+            status += " - Detection & Validation Mode";
+            if (m_starsDetected) {
+                status += QString(", %1 stars detected").arg(m_lastStarMask.starCenters.size());
+            }
+            
+            if (m_validationComplete) {
+                status += QString(", %1 matched").arg(m_lastValidation.totalMatches);
+            }
         }
     }
     
@@ -495,3 +725,161 @@ void MainWindow::runStarDetection()
     // This method can be kept for backwards compatibility or removed
     onDetectStars();
 }
+
+// Add this method to MainWindow.cpp
+void MainWindow::debugCatalogQuery()
+{
+    if (!m_hasWCS) {
+        QMessageBox::information(this, "Debug", "No WCS data available");
+        return;
+    }
+    
+    WCSData wcs = m_catalogValidator->getWCSData();
+    double radius = m_fieldRadiusSpin->value();
+    double magLimit = m_plotMagnitudeSpin->value();
+    
+    qDebug() << "=== MANUAL CATALOG DEBUG ===";
+    qDebug() << "Your image center: RA =" << wcs.crval1 << "° Dec =" << wcs.crval2 << "°";
+    qDebug() << "Search radius:" << radius << "°";
+    qDebug() << "Magnitude limit:" << magLimit;
+    
+    // Calculate field size
+    double fieldWidth = wcs.width * wcs.pixscale / 3600.0;  // degrees
+    double fieldHeight = wcs.height * wcs.pixscale / 3600.0; // degrees
+    
+    QString debugInfo = QString("=== CATALOG QUERY DEBUG ===\n\n"
+                               "Image center coordinates:\n"
+                               "RA: %1° (%2h %3m)\n"
+                               "Dec: %4° (%5° %6')\n\n"
+                               "Search parameters:\n"
+                               "Radius: %7° (%8 arcmin)\n"
+                               "Magnitude limit: %9\n\n"
+                               "Image field size:\n"
+                               "Width: %10° (%11 arcmin)\n"
+                               "Height: %12° (%13 arcmin)\n\n")
+                       .arg(wcs.crval1, 0, 'f', 4)
+                       .arg((int)(wcs.crval1/15)).arg((int)((wcs.crval1/15 - (int)(wcs.crval1/15))*60))
+                       .arg(wcs.crval2, 0, 'f', 4)
+                       .arg((int)wcs.crval2).arg((int)((wcs.crval2 - (int)wcs.crval2)*60))
+                       .arg(radius, 0, 'f', 2).arg(radius*60, 0, 'f', 1)
+                       .arg(magLimit, 0, 'f', 1)
+                       .arg(fieldWidth, 0, 'f', 3).arg(fieldWidth*60, 0, 'f', 1)
+                       .arg(fieldHeight, 0, 'f', 3).arg(fieldHeight*60, 0, 'f', 1);
+    
+    // Generate test URLs for manual checking
+    QString hipUrl = QString("https://vizier.cds.unistra.fr/viz-bin/votable?"
+                            "-source=I/239/hip_main&"
+                            "-c=%1+%2&"
+                            "-c.rs=%3&"
+                            "-out.max=500&"
+                            "-out=HIP,RAhms,DEdms,Vmag")
+                    .arg(wcs.crval1, 0, 'f', 6)
+                    .arg(wcs.crval2, 0, 'f', 6)
+                    .arg(radius, 0, 'f', 4);
+    
+    QString tychoUrl = QString("https://vizier.cds.unistra.fr/viz-bin/votable?"
+                              "-source=I/259/tyc2&"
+                              "-c=%1+%2&"
+                              "-c.rs=%3&"
+                              "-out.max=1000&"
+                              "-out=TYC1,TYC2,TYC3,RAmdeg,DEmdeg,VTmag")
+                      .arg(wcs.crval1, 0, 'f', 6)
+                      .arg(wcs.crval2, 0, 'f', 6)
+                      .arg(radius, 0, 'f', 4);
+    
+    debugInfo += "TEST URLS (copy to browser):\n\n";
+    debugInfo += "Hipparcos query:\n" + hipUrl + "\n\n";
+    debugInfo += "Tycho-2 query:\n" + tychoUrl + "\n\n";
+    
+    // Check if coordinates are reasonable
+    bool andromedaRegion = (wcs.crval1 >= 8 && wcs.crval1 <= 15 && 
+                           wcs.crval2 >= 38 && wcs.crval2 <= 44);
+    
+    if (andromedaRegion) {
+        debugInfo += "✓ Coordinates are in Andromeda Galaxy region\n";
+    } else {
+        debugInfo += "⚠ Coordinates are NOT in expected Andromeda region\n";
+    }
+    
+    if (radius < fieldWidth || radius < fieldHeight) {
+        debugInfo += "⚠ Search radius may be too small for field size\n";
+        debugInfo += QString("Recommend radius ≥ %1°\n").arg(std::max(fieldWidth, fieldHeight) * 1.2, 0, 'f', 2);
+    } else {
+        debugInfo += "✓ Search radius covers image field\n";
+    }
+    
+    if (magLimit < 8.0) {
+        debugInfo += "⚠ Magnitude limit may be too bright for this region\n";
+        debugInfo += "Try magnitude 10-12 for more stars\n";
+    }
+    
+    // Show in dialog with copy button
+    QDialog* debugDialog = new QDialog(this);
+    debugDialog->setWindowTitle("Catalog Query Debug Information");
+    debugDialog->setModal(true);
+    debugDialog->resize(800, 600);
+    
+    QVBoxLayout* layout = new QVBoxLayout(debugDialog);
+    
+    QTextEdit* textEdit = new QTextEdit(debugDialog);
+    textEdit->setPlainText(debugInfo);
+    textEdit->setFont(QFont("Courier", 10));
+    layout->addWidget(textEdit);
+    
+    QHBoxLayout* buttonLayout = new QHBoxLayout;
+    
+    QPushButton* copyButton = new QPushButton("Copy to Clipboard");
+    connect(copyButton, &QPushButton::clicked, [debugInfo]() {
+        QApplication::clipboard()->setText(debugInfo);
+    });
+    buttonLayout->addWidget(copyButton);
+    
+    QPushButton* testHipButton = new QPushButton("Test Hipparcos URL");
+    connect(testHipButton, &QPushButton::clicked, [hipUrl]() {
+        QDesktopServices::openUrl(QUrl(hipUrl));
+    });
+    buttonLayout->addWidget(testHipButton);
+    
+    QPushButton* closeButton = new QPushButton("Close");
+    connect(closeButton, &QPushButton::clicked, debugDialog, &QDialog::accept);
+    buttonLayout->addWidget(closeButton);
+    
+    layout->addLayout(buttonLayout);
+    
+    debugDialog->exec();
+    debugDialog->deleteLater();
+}
+
+/*
+
+// Add this button to your setupUI() method in MainWindow.cpp
+void MainWindow::addDebugButton()
+{
+    // Add after your other buttons
+    QPushButton* debugButton = new QPushButton("Debug Catalog");
+    debugButton->setToolTip("Debug catalog query parameters and test URLs");
+    connect(debugButton, &QPushButton::clicked, this, &MainWindow::debugCatalogQuery);
+    m_buttonLayout->addWidget(debugButton);
+}
+
+  
+// Alternative: Add as menu item instead of button
+void MainWindow::addDebugMenu()
+{
+    QMenuBar* menuBar = this->menuBar();
+    QMenu* debugMenu = menuBar->addMenu("&Debug");
+    
+    QAction* debugQueryAction = debugMenu->addAction("Debug Catalog Query");
+    debugQueryAction->setShortcut(QKeySequence("Ctrl+D"));
+    connect(debugQueryAction, &QAction::triggered, this, &MainWindow::debugCatalogQuery);
+    
+    QAction* testCoordsAction = debugMenu->addAction("Test Coordinates");
+    connect(testCoordsAction, &QAction::triggered, this, [this]() {
+        if (m_hasWCS) {
+            WCSData wcs = m_catalogValidator->getWCSData();
+            m_catalogValidator->diagnoseCatalogQuery(wcs.crval1, wcs.crval2, m_fieldRadiusSpin->value());
+        }
+    });
+}
+
+*/
