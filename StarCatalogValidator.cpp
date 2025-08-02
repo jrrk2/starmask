@@ -17,7 +17,7 @@
 StarCatalogValidator::StarCatalogValidator(QObject* parent)
     : QObject(parent)
     , m_catalogSource(Hipparcos)
-    , m_validationMode(Normal)
+    , m_validationMode(Loose)
     , m_pixelTolerance(5.0)
     , m_magnitudeTolerance(2.0)
     , m_magnitudeLimit(12.0)
@@ -107,67 +107,111 @@ void StarCatalogValidator::setWCSFromMetadata(const QStringList& metadata)
 {
     WCSData wcs;
     
+    qDebug() << "=== Extracting WCS from metadata ===";
+    qDebug() << "Total metadata lines:" << metadata.size();
+    
+    // Debug: Show first few metadata lines to understand the format
+    qDebug() << "=== First 10 metadata lines ===";
+    for (int i = 0; i < qMin(10, metadata.size()); ++i) {
+        qDebug() << "Line" << i << ":" << metadata[i];
+    }
+    
+    // Look for specific WCS keywords to debug
+    for (int i = 0; i < metadata.size(); ++i) {
+        const QString& line = metadata[i];
+        if (line.contains("CRVAL1", Qt::CaseInsensitive) || 
+            line.contains("CRVAL2", Qt::CaseInsensitive) ||
+            line.contains("CD1_1", Qt::CaseInsensitive) ||
+            line.contains("CD2_2", Qt::CaseInsensitive)) {
+            qDebug() << "WCS keyword line" << i << ":" << line;
+        }
+    }
+    
     // Parse common WCS keywords from metadata
     for (const QString& line : metadata) {
         if (line.contains("CRVAL1", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CRVAL1[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"(CRVAL1:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.crval1 = match.captured(1).toDouble();
+                qDebug() << "Found CRVAL1:" << wcs.crval1;
             }
         } else if (line.contains("CRVAL2", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CRVAL2[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"(CRVAL2:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.crval2 = match.captured(1).toDouble();
+                qDebug() << "Found CRVAL2:" << wcs.crval2;
             }
         } else if (line.contains("CRPIX1", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CRPIX1[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"(CRPIX1:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.crpix1 = match.captured(1).toDouble();
+                qDebug() << "Found CRPIX1:" << wcs.crpix1;
             }
         } else if (line.contains("CRPIX2", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CRPIX2[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"(CRPIX2:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.crpix2 = match.captured(1).toDouble();
+                qDebug() << "Found CRPIX2:" << wcs.crpix2;
             }
         } else if (line.contains("CD1_1", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CD1_1[:\s]+([+-]?\d+\.?\d*[eE]?[+-]?\d*))");
+            QRegularExpression re(R"(CD1_1:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.cd11 = match.captured(1).toDouble();
+                qDebug() << "Found CD1_1:" << wcs.cd11;
             }
         } else if (line.contains("CD1_2", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CD1_2[:\s]+([+-]?\d+\.?\d*[eE]?[+-]?\d*))");
+            QRegularExpression re(R"(CD1_2:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.cd12 = match.captured(1).toDouble();
+                qDebug() << "Found CD1_2:" << wcs.cd12;
             }
         } else if (line.contains("CD2_1", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CD2_1[:\s]+([+-]?\d+\.?\d*[eE]?[+-]?\d*))");
+            QRegularExpression re(R"(CD2_1:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.cd21 = match.captured(1).toDouble();
+                qDebug() << "Found CD2_1:" << wcs.cd21;
             }
         } else if (line.contains("CD2_2", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(CD2_2[:\s]+([+-]?\d+\.?\d*[eE]?[+-]?\d*))");
+            QRegularExpression re(R"(CD2_2:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.cd22 = match.captured(1).toDouble();
+                qDebug() << "Found CD2_2:" << wcs.cd22;
             }
         } else if (line.contains("PIXSCALE", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"(PIXSCALE[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"(PIXSCALE:\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.pixscale = match.captured(1).toDouble();
+                qDebug() << "Found PIXSCALE:" << wcs.pixscale;
             }
         } else if (line.contains("ORIENTAT", Qt::CaseInsensitive) || line.contains("ROTATION", Qt::CaseInsensitive)) {
-            QRegularExpression re(R"((?:ORIENTAT|ROTATION)[:\s]+([+-]?\d+\.?\d*))");
+            QRegularExpression re(R"((?:ORIENTAT|ROTATION):\s*([+-]?\d*\.?\d*(?:[eE][+-]?\d+)?))");
             auto match = re.match(line);
             if (match.hasMatch()) {
                 wcs.orientation = match.captured(1).toDouble();
+                qDebug() << "Found ORIENTAT/ROTATION:" << wcs.orientation;
+            }
+        } else if (line.contains("NAXIS1", Qt::CaseInsensitive)) {
+            QRegularExpression re(R"(NAXIS1:\s*(\d+))");
+            auto match = re.match(line);
+            if (match.hasMatch()) {
+                wcs.width = match.captured(1).toInt();
+                qDebug() << "Found NAXIS1 (width):" << wcs.width;
+            }
+        } else if (line.contains("NAXIS2", Qt::CaseInsensitive)) {
+            QRegularExpression re(R"(NAXIS2:\s*(\d+))");
+            auto match = re.match(line);
+            if (match.hasMatch()) {
+                wcs.height = match.captured(1).toInt();
+                qDebug() << "Found NAXIS2 (height):" << wcs.height;
             }
         } else if (line.contains("Dimensions", Qt::CaseInsensitive)) {
             QRegularExpression re(R"((\d+)\s*[×x]\s*(\d+))");
@@ -175,8 +219,21 @@ void StarCatalogValidator::setWCSFromMetadata(const QStringList& metadata)
             if (match.hasMatch()) {
                 wcs.width = match.captured(1).toInt();
                 wcs.height = match.captured(2).toInt();
+                qDebug() << "Found dimensions:" << wcs.width << "x" << wcs.height;
             }
         }
+    }
+    
+    // Calculate pixel scale from CD matrix if available but pixscale not directly provided
+    if (wcs.pixscale == 0.0 && (wcs.cd11 != 0.0 || wcs.cd12 != 0.0 || wcs.cd21 != 0.0 || wcs.cd22 != 0.0)) {
+        // Calculate pixel scale from CD matrix
+        // Pixel scale = sqrt(CD1_1^2 + CD2_1^2) converted from degrees to arcseconds
+        double cd11_arcsec = wcs.cd11 * 3600.0; // Convert from degrees to arcseconds
+        double cd21_arcsec = wcs.cd21 * 3600.0;
+        wcs.pixscale = sqrt(cd11_arcsec * cd11_arcsec + cd21_arcsec * cd21_arcsec);
+        
+        qDebug() << "Calculated pixel scale from CD matrix:" << wcs.pixscale << "arcsec/pixel";
+        qDebug() << "CD matrix elements: CD11=" << wcs.cd11 << "CD21=" << wcs.cd21;
     }
     
     // Check if we have minimum required WCS data
@@ -194,12 +251,15 @@ void StarCatalogValidator::setWCSFromMetadata(const QStringList& metadata)
             wcs.cd12 = pixscaleRad * sinRot;
             wcs.cd21 = pixscaleRad * sinRot;
             wcs.cd22 = pixscaleRad * cosRot;
+            
+            qDebug() << "Created CD matrix from pixel scale:" << wcs.pixscale;
         }
         
         // Set default reference pixel if not provided
         if (wcs.crpix1 == 0.0 && wcs.crpix2 == 0.0 && wcs.width > 0 && wcs.height > 0) {
-            wcs.crpix1 = wcs.width / 2.0;
-            wcs.crpix2 = wcs.height / 2.0;
+            wcs.crpix1 = wcs.width / 2.0 + 1.0;  // FITS uses 1-based indexing
+            wcs.crpix2 = wcs.height / 2.0 + 1.0;
+            qDebug() << "Set default reference pixel:" << wcs.crpix1 << wcs.crpix2;
         }
         
         wcs.isValid = true;
@@ -381,7 +441,7 @@ void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, doubl
     qDebug() << "Querying catalog:" << queryUrl;
     
     emit catalogQueryStarted();
-
+    
     auto q = QUrl(queryUrl);
     QNetworkRequest request(q);
     request.setHeader(QNetworkRequest::UserAgentHeader, "StarCatalogValidator/1.0");
