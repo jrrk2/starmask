@@ -15,6 +15,7 @@
 #include <pcl/WCSKeywords.h>
 #include <pcl/LinearTransformation.h>
 #include <pcl/AstrometricMetadata.h>
+#include <curl/curl.h>
 #include "ImageReader.h"
 
 struct WCSData {
@@ -175,7 +176,7 @@ signals:
     void errorSignal(const QString& message);
     
 private slots:
-    void onCatalogQueryFinished();
+  //    void onCatalogQueryFinished();
     void onNetworkError(QNetworkReply::NetworkError error);
     
 private:
@@ -186,7 +187,6 @@ private:
     // Helper methods
     void testAstrometricMetadata() const;
     // Configuration
-    CatalogSource m_catalogSource;
     ValidationMode m_validationMode;
     double m_pixelTolerance;
     double m_magnitudeTolerance;
@@ -198,8 +198,8 @@ private:
     ValidationResult m_lastValidation;
     
     // Network
-    std::unique_ptr<QNetworkAccessManager> m_networkManager;
-    QNetworkReply* m_currentReply;
+    CURL* m_curl;
+    QByteArray m_catData;
     
     // Internal methods
     void initializeTolerances();
@@ -207,7 +207,7 @@ private:
     void parseCatalogResponse(const QByteArray& data);
     void parseHipparcosData(const QJsonArray& stars);
     void parseGaiaData(const QJsonArray& stars);
-    void parseVOTableData(const QString& xmlData);
+  //    void parseVOTableData(const QString& xmlData);
     double parseCoordinate(const QString& coordStr, bool isRA) const;
     
     ValidationResult performMatching(const QVector<QPoint>& detectedStars, 

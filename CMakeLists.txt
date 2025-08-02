@@ -106,11 +106,12 @@ find_library(LCMS2_LIBRARY lcms2 PATHS /opt/homebrew/lib)
 find_library(CRYPTO_LIBRARY crypto PATHS /opt/homebrew/lib)
 find_library(CFITSIO_LIBRARY cfitsio PATHS /opt/homebrew/lib)
 find_library(TIFF_LIBRARY NAMES tiff PATHS /opt/homebrew/lib)
+find_library(CURL_LIBRARY NAMES curl PATHS /opt/homebrew/lib)
 
 # Check for required libraries
-foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY TIFF_LIBRARY)
+foreach(lib LZ4_LIBRARY ZSTD_LIBRARY LCMS2_LIBRARY CRYPTO_LIBRARY TIFF_LIBRARY CURL_LIBRARY)
     if(NOT ${lib})
-        message(FATAL_ERROR "${lib} not found. Install with: brew install lz4 zstd little-cms2 openssl libtiff")
+        message(FATAL_ERROR "${lib} not found. Install with: brew install lz4 zstd little-cms2 openssl libtiff curl")
     endif()
 endforeach()
 
@@ -189,6 +190,7 @@ target_link_libraries(StarMaskDemo PRIVATE
     ${LCMS2_LIBRARY}
     ${CRYPTO_LIBRARY}
     ${TIFF_LIBRARY}
+    ${CURL_LIBRARY}
     z
 )
 

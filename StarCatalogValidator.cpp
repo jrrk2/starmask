@@ -17,15 +17,13 @@
 
 StarCatalogValidator::StarCatalogValidator(QObject* parent)
     : QObject(parent)
-    , m_catalogSource(Hipparcos)
     , m_validationMode(Loose)
     , m_pixelTolerance(5.0)
     , m_magnitudeTolerance(2.0)
     , m_magnitudeLimit(12.0)
-    , m_networkManager(std::make_unique<QNetworkAccessManager>(this))
-    , m_currentReply(nullptr)
     , m_wcsMatrixValid(false)
     , m_det(0.0)
+    , m_curl(curl_easy_init())
 {
     initializeTolerances();
     
@@ -37,10 +35,7 @@ StarCatalogValidator::StarCatalogValidator(QObject* parent)
 
 StarCatalogValidator::~StarCatalogValidator()
 {
-    if (m_currentReply) {
-        m_currentReply->abort();
-        m_currentReply->deleteLater();
-    }
+    curl_easy_cleanup(m_curl);
 }
 
 void StarCatalogValidator::initializeTolerances()
@@ -59,12 +54,6 @@ void StarCatalogValidator::initializeTolerances()
             m_magnitudeTolerance = 3.0;
             break;
     }
-}
-
-void StarCatalogValidator::setCatalogSource(CatalogSource source)
-{
-    m_catalogSource = source;
-    qDebug() << "Catalog source set to:" << static_cast<int>(source);
 }
 
 void StarCatalogValidator::setValidationMode(ValidationMode mode)
@@ -294,48 +283,10 @@ void StarCatalogValidator::updateWCSMatrix()
     }
 }
 
-QString StarCatalogValidator::buildCatalogQuery(double centerRA, double centerDec, double radiusDegrees)
-{
-    QString baseUrl;
-    QString query;
-    
-    switch (m_catalogSource) {
-        case Hipparcos:
-            // Use VizieR for Hipparcos catalog
-            baseUrl = "https://vizier.cds.unistra.fr/viz-bin/votable";
-            query = QString("?-source=I/239/hip_main&-out.max=1000&-c=%1+%2&-c.rs=%3&-out=HIP,RAhms,DEdms,Vmag,SpType")
-                   .arg(centerRA, 0, 'f', 6)
-                   .arg(centerDec, 0, 'f', 6)
-                   .arg(radiusDegrees, 0, 'f', 4);
-            break;
-            
-        case Tycho2:
-            baseUrl = "https://vizier.cds.unistra.fr/viz-bin/votable";
-            query = QString("?-source=I/259/tyc2&-out.max=2000&-c=%1+%2&-c.rs=%3&-out=TYC1,TYC2,TYC3,RAmdeg,DEmdeg,VTmag")
-                   .arg(centerRA, 0, 'f', 6)
-                   .arg(centerDec, 0, 'f', 6)
-                   .arg(radiusDegrees, 0, 'f', 4);
-            break;
-            
-        case Gaia:
-            // Use ESA Gaia archive (TAP service)
-            baseUrl = "https://gea.esac.esa.int/tap-server/tap/sync";
-	    query = QString("?REQUEST=doQuery&LANG=ADQL&FORMAT=json&QUERY="
-			   "SELECT TOP %1 source_id,ra,dec,phot_g_mean_mag "
-			   "FROM gaiadr3.gaia_source "
-			   "WHERE CONTAINS(POINT('ICRS',ra,dec),CIRCLE('ICRS',%2,%3,%4))=1 "
-			   "ORDER BY phot_g_mean_mag")
-		   .arg(2000)  // Max results
-		   .arg(centerRA, 0, 'f', 6)
-		   .arg(centerDec, 0, 'f', 6)
-		   .arg(radiusDegrees, 0, 'f', 4);
-            break;
-            
-        default:
-            return QString();
-    }
-    
-    return baseUrl + query;
+// Callback to collect HTTP response
+static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
 }
 
 void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
@@ -345,58 +296,46 @@ void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, doubl
         return;
     }
     
-    if (m_currentReply) {
-        m_currentReply->abort();
-        m_currentReply->deleteLater();
-        m_currentReply = nullptr;
+    QString baseUrl;
+    QString query;
+
+    std::string adqlQuery =
+        "SELECT TOP 10000 source_id,ra,dec,phot_g_mean_mag "
+        "FROM gaiaedr3.gaia_source "
+        "WHERE CONTAINS(POINT('ICRS', ra, dec), "
+        "CIRCLE('ICRS', " + std::to_string(centerRA) + ", " + std::to_string(centerDec) + ", " + std::to_string(radiusDegrees) + "))=1 ";
+
+    if (!m_curl) {
+      qDebug() << "Curl init failed!\n";
+      return;
     }
+
+    std::string postFields = "REQUEST=doQuery"
+                             "&LANG=ADQL"
+                             "&FORMAT=JSON"
+      "&QUERY=" + std::string(curl_easy_escape(m_curl, adqlQuery.c_str(), adqlQuery.size()));
     
-    QString queryUrl = buildCatalogQuery(centerRA, centerDec, radiusDegrees);
-    if (queryUrl.isEmpty()) {
-        emit errorSignal("Unable to build catalog query URL");
-        return;
-    }
-    
-    qDebug() << "Querying catalog:" << queryUrl;
+    std::string readBuffer;
+
+    curl_easy_setopt(m_curl, CURLOPT_URL, "https://gea.esac.esa.int/tap-server/tap/sync");
+    curl_easy_setopt(m_curl, CURLOPT_POSTFIELDS, postFields.c_str());
+    curl_easy_setopt(m_curl, CURLOPT_WRITEFUNCTION, writeCallback);
+    curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &readBuffer);
+
+    qDebug() << "Querying catalog:" << postFields;
     
     emit catalogQueryStarted();
     
-    auto q = QUrl(queryUrl);
-    QNetworkRequest request(q);
-    request.setHeader(QNetworkRequest::UserAgentHeader, "StarCatalogValidator/1.0");
-    request.setRawHeader("Accept", "application/json,application/x-votable+xml,text/plain");
+    CURLcode res = curl_easy_perform(m_curl);
+    m_catData = readBuffer.c_str();
     
-    m_currentReply = m_networkManager->get(request);
-    connect(m_currentReply, &QNetworkReply::finished, this, &StarCatalogValidator::onCatalogQueryFinished);
-    connect(m_currentReply, QOverload<QNetworkReply::NetworkError>::of(&QNetworkReply::errorOccurred),
-            this, &StarCatalogValidator::onNetworkError);
-    
-    // Set a timeout
-    QTimer::singleShot(30000, this, [this]() {
-        if (m_currentReply && m_currentReply->isRunning()) {
-	  //            m_currentReply->abort();
-            emit errorSignal("Catalog query timed out");
-        }
-    });
-}
-
-void StarCatalogValidator::onCatalogQueryFinished()
-{
-    if (!m_currentReply) return;
-    
-    if (m_currentReply->error() == QNetworkReply::NoError) {
-        QByteArray data = m_currentReply->readAll();
-        parseCatalogResponse(data);
-        emit catalogQueryFinished(true, QString("Retrieved %1 catalog stars").arg(m_catalogStars.size()));
-    } else {
-        QString errorMsg = QString("Catalog query failed: %1").arg(m_currentReply->errorString());
-        qDebug() << errorMsg;
-        emit catalogQueryFinished(false, errorMsg);
-        emit errorSignal(errorMsg);
-    }
-    
-    m_currentReply->deleteLater();
-    m_currentReply = nullptr;
+    if (res != CURLE_OK)
+      qDebug() << "Curl error: " << curl_easy_strerror(res) << "\n";
+    else
+      {
+      parseCatalogResponse(m_catData);
+      emit catalogQueryFinished(true, QString("Retrieved %1 catalog stars").arg(m_catalogStars.size()));
+      }
 }
 
 void StarCatalogValidator::onNetworkError(QNetworkReply::NetworkError error)
@@ -419,12 +358,7 @@ void StarCatalogValidator::parseCatalogResponse(const QByteArray& data)
         if (obj.contains("data")) {
             parseGaiaData(obj["data"].toArray());
         }
-    } else {
-        // Try to parse as VOTable (XML format from VizieR)
-        QString xmlData = QString::fromUtf8(data);
-        parseVOTableData(xmlData);
     }
-    
     // Calculate pixel positions for all catalog stars
     for (auto& star : m_catalogStars) {
         star.pixelPos = skyToPixel(star.ra, star.dec);
@@ -451,60 +385,9 @@ void StarCatalogValidator::parseGaiaData(const QJsonArray& stars)
                 
                 if (magnitude <= m_magnitudeLimit) {
                     CatalogStar star(QString("Gaia_%1").arg(sourceId), ra, dec, magnitude);
+		    qDebug() << sourceId << ra << dec << magnitude;
                     m_catalogStars.append(star);
                 }
-            }
-        }
-    }
-}
-
-void StarCatalogValidator::parseVOTableData(const QString& xmlData)
-{
-    // Simple XML parsing for VOTable format
-    // This is a basic implementation - in production you'd use QXmlStreamReader
-    QRegularExpression rowRegex(R"(<TR>.*?</TR>)", QRegularExpression::DotMatchesEverythingOption);
-    QRegularExpression tdRegex(R"(<TD[^>]*>(.*?)</TD>)");
-    
-    auto rowMatches = rowRegex.globalMatch(xmlData);
-    
-    while (rowMatches.hasNext()) {
-        auto rowMatch = rowMatches.next();
-        QString row = rowMatch.captured(0);
-        
-        auto cellMatches = tdRegex.globalMatch(row);
-        QStringList cells;
-        
-        while (cellMatches.hasNext()) {
-            auto cellMatch = cellMatches.next();
-            cells.append(cellMatch.captured(1).trimmed());
-        }
-        
-        // Parse based on catalog source
-        if (m_catalogSource == Hipparcos && cells.size() >= 5) {
-            QString hipId = cells[0];
-            QString raStr = cells[1];
-            QString decStr = cells[2];
-            double magnitude = cells[3].toDouble();
-            QString spectralType = cells[4];
-            
-            // Convert RA/Dec from sexagesimal to decimal degrees
-            double ra = parseCoordinate(raStr, true);
-            double dec = parseCoordinate(decStr, false);
-            
-            if (ra >= 0 && dec >= -90 && magnitude <= m_magnitudeLimit) {
-                CatalogStar star(QString("HIP_%1").arg(hipId), ra, dec, magnitude);
-                star.spectralType = spectralType;
-                m_catalogStars.append(star);
-            }
-        } else if (m_catalogSource == Tycho2 && cells.size() >= 6) {
-            QString tycId = QString("%1-%2-%3").arg(cells[0], cells[1], cells[2]);
-            double ra = cells[3].toDouble();
-            double dec = cells[4].toDouble();
-            double magnitude = cells[5].toDouble();
-            
-            if (magnitude <= m_magnitudeLimit) {
-                CatalogStar star(QString("TYC_%1").arg(tycId), ra, dec, magnitude);
-                m_catalogStars.append(star);
             }
         }
     }
@@ -539,70 +422,6 @@ double StarCatalogValidator::parseCoordinate(const QString& coordStr, bool isRA)
     }
     
     return -999.0; // Invalid coordinate
-}
-
-void StarCatalogValidator::loadCustomCatalog(const QString& filePath)
-{
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        emit errorSignal(QString("Cannot open catalog file: %1").arg(filePath));
-        return;
-    }
-    
-    QTextStream in(&file);
-    QVector<CatalogStar> customStars;
-    
-    // Skip header line if present
-    QString line = in.readLine();
-    if (!line.contains(QRegularExpression(R"(\d+\.?\d*)"))) {
-        line = in.readLine(); // Skip header
-    }
-    
-    int lineNumber = 1;
-    do {
-        QStringList parts = line.split(QRegularExpression(R"([,\t\s]+)"), Qt::SkipEmptyParts);
-        
-        if (parts.size() >= 3) {
-            QString id = parts.size() > 3 ? parts[0] : QString("Star_%1").arg(lineNumber);
-            int idxOffset = parts.size() > 3 ? 1 : 0;
-            
-            bool raOk, decOk, magOk = true;
-            double ra = parts[idxOffset].toDouble(&raOk);
-            double dec = parts[idxOffset + 1].toDouble(&decOk);
-            double mag = parts.size() > idxOffset + 2 ? parts[idxOffset + 2].toDouble(&magOk) : 10.0;
-            
-            if (raOk && decOk && magOk && mag <= m_magnitudeLimit) {
-                CatalogStar star(id, ra, dec, mag);
-                if (parts.size() > idxOffset + 3) {
-                    star.spectralType = parts[idxOffset + 3];
-                }
-                customStars.append(star);
-            }
-        }
-        
-        line = in.readLine();
-        lineNumber++;
-    } while (!line.isNull());
-    
-    loadCustomCatalog(customStars);
-    qDebug() << "Loaded" << customStars.size() << "stars from custom catalog";
-}
-
-void StarCatalogValidator::loadCustomCatalog(const QVector<CatalogStar>& stars)
-{
-    m_catalogStars = stars;
-    m_catalogSource = Custom;
-    
-    // Calculate pixel positions
-    for (auto& star : m_catalogStars) {
-        star.pixelPos = skyToPixel(star.ra, star.dec);
-        if (star.pixelPos.x() < 0 || star.pixelPos.y() < 0 ||
-            star.pixelPos.x() >= m_wcsData.width || star.pixelPos.y() >= m_wcsData.height) {
-            star.isValid = false;
-        }
-    }
-    
-    emit catalogQueryFinished(true, QString("Loaded %1 custom catalog stars").arg(stars.size()));
 }
 
 ValidationResult StarCatalogValidator::validateStars(const QVector<QPoint>& detectedStars, 

@@ -33,7 +33,6 @@ private slots:
     void onDetectStars();
     void onValidateStars();
     void onPlotCatalogStars();  // NEW: Direct catalog plotting
-    void onCatalogSourceChanged();
     void onValidationModeChanged();
     void onMagnitudeLimitChanged();
     void onPixelToleranceChanged();
@@ -86,11 +85,9 @@ private:
     // Catalog plotting controls
     QGroupBox* m_plottingGroup;           // NEW: Plotting controls group
     QVBoxLayout* m_plottingLayout;        // NEW: Plotting layout
-    QComboBox* m_plotCatalogSourceCombo;  // NEW: Catalog source for plotting
     QDoubleSpinBox* m_plotMagnitudeSpin;  // NEW: Magnitude limit for plotting
     QDoubleSpinBox* m_fieldRadiusSpin;    // NEW: Field radius control
     
-    QComboBox* m_catalogSourceCombo;
     QComboBox* m_validationModeCombo;
     QSpinBox* m_magnitudeLimitSpin;
     QSpinBox* m_pixelToleranceSpin;
