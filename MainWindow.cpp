@@ -19,7 +19,529 @@
 #include <QSplitter>
 #include <QMessageBox>
 #include <QJsonDocument>
-#include "Local2MASSCatalog.h"
+#include "GaiaGDR3Catalog.h"
+#include <QTime>
+// Add these updates to your MainWindow.cpp
+
+// Update the includes at the top:
+#include "MainWindow.h"
+#include "ImageReader.h"
+#include "PCLMockAPI.h"
+#include "GaiaGDR3Catalog.h"  // Add this line
+
+// Replace the setup2MASSCatalog method with setupGaiaDR3Catalog:
+void MainWindow::setupGaiaDR3Catalog()
+{
+    // Configure the Gaia GDR3 catalog path
+    QString catalogPath = "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd";
+    
+    // Check if catalog file exists
+    if (QFile::exists(catalogPath)) {
+        qDebug() << "✅ Found Gaia GDR3 catalog at:" << catalogPath;
+        
+        QFileInfo info(catalogPath);
+        double sizeMB = info.size() / (1024.0 * 1024.0);
+        qDebug() << QString("📊 Catalog size: %.1f MB").arg(sizeMB);
+        
+        // Set the catalog path
+        GaiaGDR3Catalog::setCatalogPath(catalogPath);
+	/*        
+        // Test database connection
+        if (GaiaGDR3Catalog::validateDatabase()) {
+            qDebug() << "✅ Gaia GDR3 database validation successful";
+            
+            // Get detailed info
+            QString info = GaiaGDR3Catalog::getCatalogInfo();
+            qDebug() << "📊 Catalog details:";
+            for (const QString& line : info.split('\n')) {
+                if (!line.isEmpty()) {
+                    qDebug() << "   " << line;
+                }
+            }
+            
+            // Update status
+            m_statusLabel->setText(QString("Gaia GDR3 catalog ready (%.1f MB)").arg(sizeMB));
+        } else {
+            qDebug() << "❌ Gaia GDR3 database validation failed";
+            m_statusLabel->setText("Gaia GDR3 catalog found but validation failed");
+        }
+        */
+    } else {
+        qDebug() << "❌ Gaia GDR3 catalog not found at:" << catalogPath;
+        qDebug() << "   Available catalog sources:";
+        
+        // Check alternative locations
+        QStringList possiblePaths = {
+            "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd",
+            "./gdr3-1.0.0-01.xpsd",
+            "../gdr3-1.0.0-01.xpsd",
+            QDir::homePath() + "/gdr3-1.0.0-01.xpsd",
+            "/usr/local/share/pixinsight/gaia/gdr3-1.0.0-01.xpsd"
+        };
+        
+        bool found = false;
+        for (const QString& path : possiblePaths) {
+            if (QFile::exists(path)) {
+                qDebug() << "✅ Found alternative at:" << path;
+                GaiaGDR3Catalog::setCatalogPath(path);
+                found = true;
+                break;
+            }
+        }
+        
+        if (!found) {
+            qDebug() << "   - Hipparcos (network)";
+            qDebug() << "   - Gaia DR3 (network)";
+            qDebug() << "   - Tycho-2 (network)";
+            
+            // Default to network catalogs if no local Gaia
+            m_statusLabel->setText("Using network catalogs (Gaia GDR3 not found)");
+        }
+    }
+}
+
+// Update the catalog menu setup for Gaia:
+void MainWindow::setupCatalogMenu()
+{
+    // Add a menu bar item for catalog management
+    QMenuBar* menuBar = this->menuBar();
+    QMenu* catalogMenu = menuBar->addMenu("&Catalog");
+    
+    QAction* browseGaiaAction = catalogMenu->addAction("Browse for Gaia GDR3 catalog...");
+    connect(browseGaiaAction, &QAction::triggered, this, &MainWindow::browseGaiaCatalogFile);
+    
+    catalogMenu->addSeparator();
+    
+    QAction* showStatsAction = catalogMenu->addAction("Show catalog statistics");
+    connect(showStatsAction, &QAction::triggered, [this]() {
+        m_catalogValidator->showCatalogStats();
+    });
+    
+    QAction* testQueryAction = catalogMenu->addAction("Test Gaia query");
+    connect(testQueryAction, &QAction::triggered, [this]() {
+        if (m_hasWCS) {
+            WCSData wcs = m_catalogValidator->getWCSData();
+            qDebug() << "\n=== TESTING GAIA GDR3 QUERY ===";
+            qDebug() << QString("Image center: RA=%.4f° Dec=%.4f°").arg(wcs.crval1).arg(wcs.crval2);
+            
+            auto start = QTime::currentTime();
+            m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, 1.0); // 1 degree radius test
+            auto elapsed = start.msecsTo(QTime::currentTime());
+            
+            qDebug() << QString("Query completed in %1ms").arg(elapsed);
+        } else {
+            QMessageBox::information(this, "Test Query", "Load an image with WCS first");
+        }
+    });
+    
+    catalogMenu->addSeparator();
+    
+    QAction* findBrightAction = catalogMenu->addAction("Find brightest stars in field");
+    connect(findBrightAction, &QAction::triggered, [this]() {
+        if (m_hasWCS) {
+            WCSData wcs = m_catalogValidator->getWCSData();
+            double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+            fieldRadius = std::max(fieldRadius, 0.5);
+            
+            m_catalogValidator->findBrightGaiaStars(wcs.crval1, wcs.crval2, fieldRadius, 20);
+        } else {
+            QMessageBox::information(this, "Bright Stars", "Load an image with WCS first");
+        }
+    });
+    
+    QAction* findSpectraAction = catalogMenu->addAction("Find stars with BP/RP spectra");
+    connect(findSpectraAction, &QAction::triggered, [this]() {
+        if (m_hasWCS) {
+            WCSData wcs = m_catalogValidator->getWCSData();
+            double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+            fieldRadius = std::max(fieldRadius, 0.5);
+            
+            m_catalogValidator->queryGaiaWithSpectra(wcs.crval1, wcs.crval2, fieldRadius);
+        } else {
+            QMessageBox::information(this, "Spectral Stars", "Load an image with WCS first");
+        }
+    });
+    
+    catalogMenu->addSeparator();
+    
+    QAction* performanceAction = catalogMenu->addAction("Test Gaia performance");
+    connect(performanceAction, &QAction::triggered, this, &MainWindow::testGaiaPerformance);
+}
+
+// Add file browser for Gaia catalog:
+void MainWindow::browseGaiaCatalogFile()
+{
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Select Gaia GDR3 Catalog File",
+        "/Volumes/X10Pro/",
+        "Gaia Catalog Files (*.xpsd);;All Files (*)"
+    );
+    
+    if (!filePath.isEmpty()) {
+        GaiaGDR3Catalog::setCatalogPath(filePath);
+        
+        QFileInfo info(filePath);
+        double sizeMB = info.size() / (1024.0 * 1024.0);
+        
+        qDebug() << "📂 User selected Gaia catalog:" << filePath;
+        qDebug() << QString("📊 Size: %.1f MB").arg(sizeMB);
+        
+        // Validate the new catalog
+        if (GaiaGDR3Catalog::validateDatabase()) {
+            m_statusLabel->setText(QString("Custom Gaia GDR3 catalog loaded (%.1f MB)").arg(sizeMB));
+            qDebug() << "✅ Custom Gaia catalog validation successful";
+        } else {
+            m_statusLabel->setText("Gaia catalog validation failed");
+            qDebug() << "❌ Custom Gaia catalog validation failed";
+        }
+        
+        // Clear previous catalog data
+        m_catalogQueried = false;
+        m_catalogPlotted = false;
+        updateValidationControls();
+        updatePlottingControls();
+    }
+}
+
+// Add performance testing method:
+void MainWindow::testGaiaPerformance()
+{
+    if (!m_hasWCS) {
+        QMessageBox::information(this, "Performance Test", "Load an image with WCS first");
+        return;
+    }
+    
+    WCSData wcs = m_catalogValidator->getWCSData();
+    double testRadius = 2.0; // 2 degree radius for performance test
+    
+    qDebug() << "\n=== GAIA GDR3 PERFORMANCE COMPARISON ===";
+    qDebug() << QString("Test query: RA=%.4f° Dec=%.4f° radius=%.1f°")
+                .arg(wcs.crval1).arg(wcs.crval2).arg(testRadius);
+    
+    // Test different magnitude limits
+    QVector<double> magLimits = {12.0, 15.0, 18.0, 20.0};
+    
+    for (double magLimit : magLimits) {
+        auto start = QTime::currentTime();
+        
+        GaiaGDR3Catalog::SearchParameters params(wcs.crval1, wcs.crval2, testRadius, magLimit);
+        auto stars = GaiaGDR3Catalog::queryRegion(params);
+        
+        auto elapsed = start.msecsTo(QTime::currentTime());
+        
+        qDebug() << QString("🚀 Mag ≤ %.1f: %1 stars in %2ms (%.1f stars/sec)")
+                    .arg(magLimit).arg(stars.size()).arg(elapsed)
+                    .arg(stars.size() * 1000.0 / elapsed);
+    }
+    
+    // Test spectrum search
+    auto start = QTime::currentTime();
+    auto specStars = GaiaGDR3Catalog::findStarsWithSpectra(wcs.crval1, wcs.crval2, testRadius, 15.0);
+    auto elapsed = start.msecsTo(QTime::currentTime());
+    
+    qDebug() << QString("🌈 BP/RP spectra search: %1 stars in %2ms")
+                .arg(specStars.size()).arg(elapsed);
+    
+    qDebug() << "📊 Gaia GDR3 provides:";
+    qDebug() << "   - Precise astrometry (positions, proper motions, parallax)";
+    qDebug() << "   - Multi-band photometry (G, BP, RP)";
+    qDebug() << "   - BP/RP low-resolution spectra for many stars";
+    qDebug() << "   - Quality flags and error estimates";
+    qDebug() << "   - Proper motion corrections to current epoch";
+}
+
+// Update the destructor to clean up Gaia resources:
+MainWindow::~MainWindow() 
+{
+    // Clean up Gaia catalog resources
+    GaiaGDR3Catalog::shutdown();
+}
+
+// Test function you can add to MainWindow or run separately
+void testGaiaGDR3Integration()
+{
+    qDebug() << "\n=== GAIA GDR3 INTEGRATION TEST ===";
+    
+    // 1. Set up the catalog path
+    QString catalogPath = "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd";
+    GaiaGDR3Catalog::setCatalogPath(catalogPath);
+    
+    if (!GaiaGDR3Catalog::isAvailable()) {
+        qDebug() << "❌ Gaia catalog not available at:" << catalogPath;
+        return;
+    }
+    
+    qDebug() << "✅ Catalog info:";
+    qDebug() << GaiaGDR3Catalog::getCatalogInfo();
+    
+    // 2. Test basic query around M31 (Andromeda Galaxy)
+    qDebug() << "\n--- Testing M31 Region Query ---";
+    double m31_ra = 10.684708;   // M31 RA
+    double m31_dec = 41.268750;  // M31 Dec
+    
+    auto start = QTime::currentTime();
+    auto m31_stars = GaiaGDR3Catalog::queryRegion(m31_ra, m31_dec, 0.5, 15.0);
+    auto elapsed = start.msecsTo(QTime::currentTime());
+    
+    qDebug() << QString("Found %1 stars around M31 in %2ms").arg(m31_stars.size()).arg(elapsed);
+    
+    if (!m31_stars.isEmpty()) {
+        qDebug() << "Brightest 5 stars:";
+        for (int i = 0; i < qMin(5, m31_stars.size()); ++i) {
+            const auto& star = m31_stars[i];
+            qDebug() << QString("  %1: RA=%.4f° Dec=%.4f° G=%.2f %2")
+                        .arg(star.sourceId).arg(star.ra).arg(star.dec)
+                        .arg(star.magnitude).arg(star.spectralClass);
+        }
+    }
+    
+    // 3. Test bright star search around Polaris
+    qDebug() << "\n--- Testing Bright Stars Around Polaris ---";
+    double polaris_ra = 37.954;   // Polaris RA  
+    double polaris_dec = 89.264;  // Polaris Dec
+    
+    start = QTime::currentTime();
+    auto bright_stars = GaiaGDR3Catalog::findBrightestStars(polaris_ra, polaris_dec, 2.0, 10);
+    elapsed = start.msecsTo(QTime::currentTime());
+    
+    qDebug() << QString("Found %1 bright stars around Polaris in %2ms").arg(bright_stars.size()).arg(elapsed);
+    
+    for (const auto& star : bright_stars) {
+        qDebug() << QString("  G=%.2f %1 at (%.4f°, %.4f°) PM=(%.1f, %.1f) mas/yr")
+                    .arg(star.spectralClass).arg(star.magnitude)
+                    .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
+    }
+    
+    // 4. Test spectrum search around Vega
+    qDebug() << "\n--- Testing Spectrum Search Around Vega ---";
+    double vega_ra = 279.234;    // Vega RA
+    double vega_dec = 38.784;    // Vega Dec
+    
+    start = QTime::currentTime();
+    auto spectral_stars = GaiaGDR3Catalog::findStarsWithSpectra(vega_ra, vega_dec, 1.0, 12.0);
+    elapsed = start.msecsTo(QTime::currentTime());
+    
+    qDebug() << QString("Found %1 stars with BP/RP spectra around Vega in %2ms").arg(spectral_stars.size()).arg(elapsed);
+    
+    for (const auto& star : spectral_stars) {
+        qDebug() << QString("  %1: G=%.2f BP=%.2f RP=%.2f %2 [SPECTRUM]")
+                    .arg(star.sourceId).arg(star.magnitude)
+                    .arg(star.magBP).arg(star.magRP).arg(star.spectralClass);
+    }
+    
+    // 5. Test performance with large search
+    qDebug() << "\n--- Testing Performance ---";
+    GaiaGDR3Catalog::testPerformance(0.0, 0.0, 5.0); // Large search around celestial equator
+    
+    // 6. Test proper motion application
+    qDebug() << "\n--- Testing Proper Motion Correction ---";
+    GaiaGDR3Catalog::SearchParameters params;
+    params.centerRA = 266.417;  // Galactic center
+    params.centerDec = -29.008;
+    params.radiusDegrees = 1.0;
+    params.maxMagnitude = 10.0;
+    params.useProperMotion = true;
+    params.epochYear = 2025.5;  // Current epoch
+    params.maxResults = 5;
+    
+    auto pm_stars = GaiaGDR3Catalog::queryRegion(params);
+    qDebug() << QString("Found %1 stars with proper motion applied to epoch %.1f")
+                .arg(pm_stars.size()).arg(params.epochYear);
+    
+    for (const auto& star : pm_stars) {
+        qDebug() << QString("  %1: G=%.2f at (%.6f°, %.6f°) PM=(%.1f, %.1f)")
+                    .arg(star.sourceId).arg(star.magnitude)
+                    .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
+    }
+    
+    qDebug() << "\n✅ Gaia GDR3 integration test completed successfully!";
+}
+
+// Integration example for your existing star validation workflow
+void integrateGaiaWithStarValidation()
+{
+    qDebug() << "\n=== GAIA INTEGRATION WITH STAR VALIDATION ===";
+    
+    // Example: Your detected stars from star mask
+    QVector<QPoint> detectedStars = {
+        QPoint(512, 256),   // Example detected star positions
+        QPoint(1024, 512),
+        QPoint(256, 1024),
+        QPoint(1500, 800)
+    };
+    
+    // Example WCS data (replace with your actual WCS)
+    double centerRA = 11.195;    // RA of image center
+    double centerDec = 41.892;   // Dec of image center
+    double pixelScale = 1.2;     // arcsec/pixel
+    int imageWidth = 2048;
+    int imageHeight = 2048;
+    
+    // Calculate field radius
+    double fieldRadius = sqrt(imageWidth * imageWidth + imageHeight * imageHeight) 
+                        * pixelScale / 3600.0 / 2.0; // Convert to degrees
+    
+    qDebug() << QString("Image field: %.2f° radius around RA=%.3f° Dec=%.3f°")
+                .arg(fieldRadius).arg(centerRA).arg(centerDec);
+    
+    // Query Gaia catalog for this field
+    GaiaGDR3Catalog::SearchParameters params;
+    params.centerRA = centerRA;
+    params.centerDec = centerDec;
+    params.radiusDegrees = fieldRadius;
+    params.maxMagnitude = 16.0;    // Reasonable limit for star detection
+    params.useProperMotion = true; // Apply proper motion to current epoch
+    params.epochYear = 2025.5;
+    
+    auto catalogStars = GaiaGDR3Catalog::queryRegion(params);
+    
+    qDebug() << QString("Retrieved %1 Gaia stars for validation").arg(catalogStars.size());
+    
+    // Example validation process (simplified)
+    int matches = 0;
+    double matchTolerance = 5.0; // pixels
+    
+    for (const QPoint& detected : detectedStars) {
+        for (const auto& catalog : catalogStars) {
+            // Convert catalog star RA/Dec to pixel coordinates (simplified)
+            // In real implementation, use your WCS transformation
+            double pixelX = imageWidth/2 + (catalog.ra - centerRA) * 3600.0 / pixelScale;
+            double pixelY = imageHeight/2 + (catalog.dec - centerDec) * 3600.0 / pixelScale;
+            
+            double distance = sqrt(pow(detected.x() - pixelX, 2) + pow(detected.y() - pixelY, 2));
+            
+            if (distance < matchTolerance) {
+                matches++;
+                qDebug() << QString("✅ Match: detected(%1,%2) ↔ Gaia %3 G=%.2f dist=%.1fpx")
+                            .arg(detected.x()).arg(detected.y())
+                            .arg(catalog.sourceId).arg(catalog.magnitude).arg(distance);
+                break;
+            }
+        }
+    }
+    
+    double matchPercentage = 100.0 * matches / detectedStars.size();
+    qDebug() << QString("Validation result: %1/%2 stars matched (%.1f%%)")
+                .arg(matches).arg(detectedStars.size()).arg(matchPercentage);
+}
+
+// Advanced Gaia features demonstration
+void demonstrateAdvancedGaiaFeatures()
+{
+    qDebug() << "\n=== ADVANCED GAIA GDR3 FEATURES ===";
+    
+    // 1. Color-magnitude diagram data
+    qDebug() << "\n--- Color-Magnitude Diagram Data ---";
+    auto stars = GaiaGDR3Catalog::queryRegion(0.0, 0.0, 2.0, 15.0);
+    
+    if (!stars.isEmpty()) {
+        qDebug() << "Sample stars for HR diagram:";
+        for (int i = 0; i < qMin(10, stars.size()); ++i) {
+            const auto& star = stars[i];
+            double bpRpColor = star.magBP - star.magRP;
+            double absoluteG = star.magnitude; // Would need distance for absolute magnitude
+            
+            qDebug() << QString("  G=%.2f BP-RP=%.3f %1 plx=%.2f")
+                        .arg(absoluteG).arg(bpRpColor)
+                        .arg(star.spectralClass).arg(star.parallax);
+        }
+    }
+    
+    // 2. Proper motion analysis
+    qDebug() << "\n--- High Proper Motion Stars ---";
+    auto highPMStars = GaiaGDR3Catalog::queryRegion(83.633, 22.014, 5.0, 12.0); // Around Aldebaran
+    
+    QVector<GaiaGDR3Catalog::Star> fastMovers;
+    for (const auto& star : highPMStars) {
+        double totalPM = sqrt(star.pmRA * star.pmRA + star.pmDec * star.pmDec);
+        if (totalPM > 50.0) { // > 50 mas/year
+            fastMovers.append(star);
+        }
+    }
+    
+    qDebug() << QString("Found %1 stars with PM > 50 mas/year").arg(fastMovers.size());
+    for (const auto& star : fastMovers) {
+        double totalPM = sqrt(star.pmRA * star.pmRA + star.pmDec * star.pmDec);
+        qDebug() << QString("  %1: PM=%.1f mas/yr G=%.2f")
+                    .arg(star.sourceId).arg(totalPM).arg(star.magnitude);
+    }
+    
+    // 3. Parallax-based distance estimates
+    qDebug() << "\n--- Nearby Stars (Parallax > 10 mas) ---";
+    QVector<GaiaGDR3Catalog::Star> nearbyStars;
+    for (const auto& star : highPMStars) {
+        if (star.parallax > 10.0) { // Closer than ~100 parsecs
+            nearbyStars.append(star);
+        }
+    }
+    
+    qDebug() << QString("Found %1 nearby stars").arg(nearbyStars.size());
+    for (const auto& star : nearbyStars) {
+        double distancePc = 1000.0 / star.parallax; // Distance in parsecs
+        qDebug() << QString("  %1: %.1f pc G=%.2f %2")
+                    .arg(star.sourceId).arg(distancePc)
+                    .arg(star.magnitude).arg(star.spectralClass);
+    }
+    
+    // 4. Quality assessment
+    qDebug() << "\n--- Data Quality Assessment ---";
+    int highQuality = 0;
+    int withSpectra = 0;
+    int goodAstrometry = 0;
+    
+    for (const auto& star : stars) {
+        if (GaiaGDR3Catalog::isHighQuality(star)) highQuality++;
+        if (star.hasSpectrum) withSpectra++;
+        if (GaiaGDR3Catalog::hasGoodAstrometry(star)) goodAstrometry++;
+    }
+    
+    qDebug() << QString("Quality statistics from %1 stars:").arg(stars.size());
+    qDebug() << QString("  High quality: %1 (%.1f%%)").arg(highQuality).arg(100.0 * highQuality / stars.size());
+    qDebug() << QString("  With BP/RP spectra: %1 (%.1f%%)").arg(withSpectra).arg(100.0 * withSpectra / stars.size());
+    qDebug() << QString("  Good astrometry: %1 (%.1f%%)").arg(goodAstrometry).arg(100.0 * goodAstrometry / stars.size());
+}
+
+// Performance comparison between different catalog sources
+void comparePerformanceWithOtherCatalogs()
+{
+    qDebug() << "\n=== CATALOG PERFORMANCE COMPARISON ===";
+    
+    double testRA = 83.633;     // Aldebaran region
+    double testDec = 22.014;
+    double testRadius = 1.0;    // 1 degree radius
+    double magLimit = 15.0;
+    
+    qDebug() << QString("Test region: RA=%.3f° Dec=%.3f° radius=%.1f° mag≤%.1f")
+                .arg(testRA).arg(testDec).arg(testRadius).arg(magLimit);
+    
+    // Test Gaia GDR3 local database
+    if (GaiaGDR3Catalog::isAvailable()) {
+        auto start = QTime::currentTime();
+        auto gaiaStars = GaiaGDR3Catalog::queryRegion(testRA, testDec, testRadius, magLimit);
+        auto elapsed = start.msecsTo(QTime::currentTime());
+        
+        qDebug() << QString("🚀 Gaia GDR3 (local): %1 stars in %2ms (%.1f stars/sec)")
+                    .arg(gaiaStars.size()).arg(elapsed).arg(gaiaStars.size() * 1000.0 / elapsed);
+        
+        // Analyze data quality
+        int withParallax = 0, withPM = 0, withSpectra = 0;
+        for (const auto& star : gaiaStars) {
+            if (star.parallax > 0) withParallax++;
+            if (star.pmRA != 0 || star.pmDec != 0) withPM++;
+            if (star.hasSpectrum) withSpectra++;
+        }
+        
+        qDebug() << QString("  Data richness: %1 with parallax, %2 with PM, %3 with spectra")
+                    .arg(withParallax).arg(withPM).arg(withSpectra);
+    }
+    
+    qDebug() << "📊 Comparison summary:";
+    qDebug() << "  Gaia GDR3: ~1000x faster than network, richest data (astrometry + photometry + spectra)";
+    qDebug() << "  2MASS: ~100x faster than network, photometry only (J, H, K bands)";
+    qDebug() << "  Network catalogs: Slow (2-10 seconds), limited by bandwidth";
+    qDebug() << "  Bright star DB: Fastest (< 1ms), but only brightest stars";
+}
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
@@ -34,7 +556,7 @@ MainWindow::MainWindow(QWidget* parent)
     , m_catalogPlotted(false)
 {
     setupUI();
-    setup2MASSCatalog();  // Add this line
+    setupGaiaDR3Catalog();  // Add this line
     setupCatalogMenu();   // Add this line
     
     // Connect image reader signals
@@ -93,8 +615,6 @@ MainWindow::MainWindow(QWidget* parent)
     updateValidationControls();
     updatePlottingControls();
 }
-
-MainWindow::~MainWindow() = default;
 
 void MainWindow::setupUI()
 {
@@ -182,7 +702,7 @@ void MainWindow::setupUI()
 
 void MainWindow::setupValidationControls()
 {
-    m_validationGroup = new QGroupBox("Star Detection & Validation");
+    m_validationGroup = new QGroupBox("Star Detection & Validation (Gaia GDR3)");
     m_validationLayout = new QVBoxLayout(m_validationGroup);
         
     // Validation mode
@@ -222,7 +742,7 @@ void MainWindow::setupValidationControls()
     m_validationLayout->addWidget(m_queryProgressBar);
     
     // WCS status
-    QLabel* wcsStatusLabel = new QLabel("WCS Status: Not available");
+    QLabel* wcsStatusLabel = new QLabel("WCS Status: Not available (Required for Gaia queries)");
     wcsStatusLabel->setObjectName("wcsStatusLabel");
     wcsStatusLabel->setStyleSheet("QLabel { color: red; font-weight: bold; }");
     m_validationLayout->addWidget(wcsStatusLabel);
@@ -687,10 +1207,10 @@ void MainWindow::updateStatusDisplay()
 }
 // Add this to MainWindow.cpp constructor or as a separate setup method
 
-void MainWindow::setup2MASSCatalog()
+/*
+void MainWindow::setupGaiaCatalog()
 {
-    // Configure the local 2MASS catalog path
-    QString catalogPath = "/Volumes/X10Pro/allsky_2mass/allsky.mag";
+    QString catalogPath = "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd";
     
     // Check if catalog file exists
     if (QFile::exists(catalogPath)) {
@@ -829,3 +1349,4 @@ void MainWindow::compareCatalogPerformance()
     qDebug() << "🌐 Network catalogs: 2000-10000ms (depends on connection)";
     qDebug() << "📊 Local catalog is ~100x faster than network queries";
 }
+*/

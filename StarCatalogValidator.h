@@ -153,8 +153,11 @@ public:
     void queryCatalog(double centerRA, double centerDec, double radiusDegrees);
     void loadCustomCatalog(const QString& filePath);
     void loadCustomCatalog(const QVector<CatalogStar>& stars);
-  //    void identifyBrightStars() const;
     void addBrightStarsFromDatabase(double centerRA, double centerDec, double radiusDegrees);
+    void queryGaiaDR3(double centerRA, double centerDec, double radiusDegrees);
+    void queryGaiaWithSpectra(double centerRA, double centerDec, double radiusDegrees);  
+    void findBrightGaiaStars(double centerRA, double centerDec, double radiusDegrees, int count = 20);
+    void initializeGaiaDR3();
   
     // Validation
     ValidationResult validateStars(const QVector<QPoint>& detectedStars, 
@@ -216,8 +219,6 @@ private:
     bool isGoodMatch(double distance, double magnitudeDiff) const;
     void calculateStatistics(ValidationResult& result) const;
     void queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees);
-    void initializeLocal2MASS();
-    void queryLocal2MASS(double centerRA, double centerDec, double radiusDegrees);
   
     // WCS transformation helpers
     void updateWCSMatrix();

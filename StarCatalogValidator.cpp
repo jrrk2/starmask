@@ -1,6 +1,6 @@
 #include "BrightStarDatabase.h"
 #include "StarCatalogValidator.h"
-#include "Local2MASSCatalog.h"
+#include "GaiaGDR3Catalog.h"  // Add this line
 #include <QNetworkRequest>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -15,9 +15,303 @@
 #include <QTimer>
 #include <cmath>
 #include <algorithm>
+#include <QNetworkRequest>
+#include <QJsonDocument>
+
+// Replace the queryLocal2MASS method with this Gaia version:
+void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, double radiusDegrees)
+{
+    qDebug() << "\n=== QUERYING GAIA GDR3 CATALOG ===";
+    
+    if (!GaiaGDR3Catalog::isAvailable()) {
+        qDebug() << "❌ Gaia GDR3 not available, falling back to network catalogs";
+        queryGaiaCatalog(centerRA, centerDec, radiusDegrees);
+        return;
+    }
+    
+    emit catalogQueryStarted();
+    
+    try {
+        // Set up Gaia search parameters
+        GaiaGDR3Catalog::SearchParameters params;
+        params.centerRA = centerRA;
+        params.centerDec = centerDec;
+        params.radiusDegrees = radiusDegrees;
+        params.maxMagnitude = m_magnitudeLimit;
+        params.maxResults = 10000;
+        params.useProperMotion = true;  // Apply proper motion to current epoch
+        params.epochYear = 2025.5;     // Current epoch
+        
+        // For faint stars, don't require spectra; for bright stars, prefer them
+        if (m_magnitudeLimit <= 12.0) {
+            // For bright star searches, prefer stars with spectra when available
+            params.requireSpectrum = false; // Don't strictly require, but prefer
+        }
+        
+        qDebug() << QString("🔍 Searching Gaia GDR3: center=(%.4f°,%.4f°) radius=%.2f° mag≤%.1f")
+                    .arg(centerRA).arg(centerDec).arg(radiusDegrees).arg(m_magnitudeLimit);
+        
+        // Query the Gaia catalog
+        auto gaiaStars = GaiaGDR3Catalog::queryRegion(params);
+        
+        // Convert Gaia stars to our CatalogStar format
+        m_catalogStars.clear();
+        m_catalogStars.reserve(gaiaStars.size());
+        
+        int starsInBounds = 0;
+        int starsWithSpectra = 0;
+        double brightestMag = 99.0;
+        
+        for (const auto& gaiaStar : gaiaStars) {
+            CatalogStar catalogStar;
+            catalogStar.id = gaiaStar.sourceId;
+            catalogStar.ra = gaiaStar.ra;
+            catalogStar.dec = gaiaStar.dec;
+            catalogStar.magnitude = gaiaStar.magnitude;
+            catalogStar.spectralType = gaiaStar.spectralClass;
+            
+            // Calculate pixel position using our WCS
+            catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
+            
+            // Check if star is within image bounds
+            catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
+                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.y() >= 0 && 
+                                  catalogStar.pixelPos.y() < m_wcsData.height);
+            
+            if (catalogStar.isValid) {
+                starsInBounds++;
+                brightestMag = std::min(brightestMag, catalogStar.magnitude);
+            }
+            
+            if (gaiaStar.hasSpectrum) {
+                starsWithSpectra++;
+            }
+            
+            m_catalogStars.append(catalogStar);
+        }
+        
+        qDebug() << QString("✅ Gaia GDR3 query successful:");
+        qDebug() << QString("   📊 Total stars retrieved: %1").arg(gaiaStars.size());
+        qDebug() << QString("   📊 Stars in image bounds: %1").arg(starsInBounds);
+        qDebug() << QString("   📊 Stars with BP/RP spectra: %1").arg(starsWithSpectra);
+        qDebug() << QString("   📊 Brightest star in field: mag %.2f").arg(brightestMag);
+        
+        // Add bright stars from our local database to fill in any gaps
+        // (Gaia sometimes has issues with very bright stars due to saturation)
+        addBrightStarsFromDatabase(centerRA, centerDec, radiusDegrees);
+        
+        // Sort by magnitude (brightest first)
+        std::sort(m_catalogStars.begin(), m_catalogStars.end(), 
+                  [](const CatalogStar& a, const CatalogStar& b) {
+                      return a.magnitude < b.magnitude;
+                  });
+        
+        QString message = QString("Retrieved %1 stars from Gaia GDR3 catalog (%2 in bounds)")
+                         .arg(m_catalogStars.size()).arg(starsInBounds);
+        
+        emit catalogQueryFinished(true, message);
+        
+    } catch (const std::exception& e) {
+        QString errorMsg = QString("Gaia GDR3 query error: %1").arg(e.what());
+        qDebug() << "❌" << errorMsg;
+        emit catalogQueryFinished(false, errorMsg);
+    } catch (...) {
+        QString errorMsg = "Unknown error during Gaia GDR3 query";
+        qDebug() << "❌" << errorMsg;
+        emit catalogQueryFinished(false, errorMsg);
+    }
+}
+
+// Update the initialization method
+void StarCatalogValidator::initializeGaiaDR3()
+{
+    // Set the path to your Gaia GDR3 catalog
+    QString catalogPath = "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd";
+    GaiaGDR3Catalog::setCatalogPath(catalogPath);
+    
+    if (GaiaGDR3Catalog::isAvailable()) {
+        qDebug() << "✅" << GaiaGDR3Catalog::getCatalogInfo();
+	/*        
+        // Validate the database
+        if (GaiaGDR3Catalog::validateDatabase()) {
+            qDebug() << "✅ Gaia GDR3 database validation successful";
+        } else {
+            qDebug() << "⚠️  Gaia GDR3 database validation failed";
+        }
+	*/
+    } else {
+        qDebug() << "❌ Gaia GDR3 catalog not found at:" << catalogPath;
+        qDebug() << "   Network catalogs will be used as fallback";
+    }
+}
+
+// Update the main queryCatalog method to use Gaia
+void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
+{
+    if (!m_wcsData.isValid) {
+        emit errorSignal("No valid WCS data available for catalog query");
+        return;
+    }
+    
+    // Try Gaia GDR3 first, fall back to network catalogs if needed
+    queryGaiaDR3(centerRA, centerDec, radiusDegrees);
+}
+
+// Add advanced Gaia search methods
+void StarCatalogValidator::queryGaiaWithSpectra(double centerRA, double centerDec, double radiusDegrees)
+{
+    qDebug() << "\n=== QUERYING GAIA GDR3 FOR STARS WITH BP/RP SPECTRA ===";
+    
+    if (!GaiaGDR3Catalog::isAvailable()) {
+        emit errorSignal("Gaia GDR3 catalog not available for spectrum search");
+        return;
+    }
+    
+    emit catalogQueryStarted();
+    
+    try {
+        auto spectralStars = GaiaGDR3Catalog::findStarsWithSpectra(
+            centerRA, centerDec, radiusDegrees, m_magnitudeLimit);
+        
+        // Convert to catalog stars
+        m_catalogStars.clear();
+        for (const auto& gaiaStar : spectralStars) {
+            CatalogStar catalogStar;
+            catalogStar.id = gaiaStar.sourceId + "_SPEC";
+            catalogStar.ra = gaiaStar.ra;
+            catalogStar.dec = gaiaStar.dec;
+            catalogStar.magnitude = gaiaStar.magnitude;
+            catalogStar.spectralType = gaiaStar.spectralClass + " (BP/RP)";
+            catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
+            catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
+                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.y() >= 0 && 
+                                  catalogStar.pixelPos.y() < m_wcsData.height);
+            
+            m_catalogStars.append(catalogStar);
+        }
+        
+        QString message = QString("Retrieved %1 stars with BP/RP spectra from Gaia GDR3")
+                         .arg(m_catalogStars.size());
+        qDebug() << "✅" << message;
+        emit catalogQueryFinished(true, message);
+        
+    } catch (...) {
+        QString errorMsg = "Error querying Gaia GDR3 for spectral data";
+        qDebug() << "❌" << errorMsg;
+        emit catalogQueryFinished(false, errorMsg);
+    }
+}
+
+void StarCatalogValidator::findBrightGaiaStars(double centerRA, double centerDec, double radiusDegrees, int count)
+{
+    qDebug() << QString("\n=== FINDING %1 BRIGHTEST GAIA STARS ===").arg(count);
+    
+    if (!GaiaGDR3Catalog::isAvailable()) {
+        emit errorSignal("Gaia GDR3 catalog not available");
+        return;
+    }
+    
+    emit catalogQueryStarted();
+    
+    try {
+        auto brightStars = GaiaGDR3Catalog::findBrightestStars(
+            centerRA, centerDec, radiusDegrees, count);
+        
+        // Convert to catalog stars
+        m_catalogStars.clear();
+        for (const auto& gaiaStar : brightStars) {
+            CatalogStar catalogStar;
+            catalogStar.id = gaiaStar.sourceId;
+            catalogStar.ra = gaiaStar.ra;
+            catalogStar.dec = gaiaStar.dec;
+            catalogStar.magnitude = gaiaStar.magnitude;
+            catalogStar.spectralType = gaiaStar.spectralClass;
+            catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
+            catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
+                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.y() >= 0 && 
+                                  catalogStar.pixelPos.y() < m_wcsData.height);
+            
+            m_catalogStars.append(catalogStar);
+        }
+        
+        QString message = QString("Found %1 brightest Gaia stars in field").arg(m_catalogStars.size());
+        qDebug() << "✅" << message;
+        emit catalogQueryFinished(true, message);
+        
+    } catch (...) {
+        QString errorMsg = "Error finding bright Gaia stars";
+        qDebug() << "❌" << errorMsg;
+        emit catalogQueryFinished(false, errorMsg);
+    }
+}
+
+// Update showCatalogStats to include Gaia-specific information
+void StarCatalogValidator::showCatalogStats() const
+{
+    if (m_catalogStars.isEmpty()) {
+        qDebug() << "No catalog stars loaded";
+        return;
+    }
+    
+    // Enhanced statistics for Gaia data
+    QMap<QString, int> spectralTypeHistogram;
+    QMap<int, int> magHistogram;
+    int validStars = 0;
+    int starsWithSpectra = 0;
+    double brightestMag = 99.0;
+    double faintestMag = -99.0;
+    double totalParallax = 0.0;
+    int parallaxCount = 0;
+    
+    for (const auto& star : m_catalogStars) {
+        if (star.isValid) validStars++;
+        
+        // Spectral type distribution
+        QString specType = star.spectralType.left(1); // First character only
+        spectralTypeHistogram[specType]++;
+        
+        // Magnitude distribution
+        int magBin = static_cast<int>(std::floor(star.magnitude));
+        magHistogram[magBin]++;
+        
+        // Magnitude range
+        brightestMag = std::min(brightestMag, star.magnitude);
+        faintestMag = std::max(faintestMag, star.magnitude);
+        
+        // Count spectra (based on ID or spectral type)
+        if (star.spectralType.contains("BP/RP") || star.id.contains("_SPEC")) {
+            starsWithSpectra++;
+        }
+    }
+    
+    qDebug() << "\n=== GAIA GDR3 CATALOG STATISTICS ===";
+    qDebug() << QString("Total stars: %1").arg(m_catalogStars.size());
+    qDebug() << QString("Stars in image bounds: %1").arg(validStars);
+    qDebug() << QString("Stars with BP/RP spectra: %1").arg(starsWithSpectra);
+    qDebug() << QString("Magnitude range: %.1f to %.1f").arg(brightestMag).arg(faintestMag);
+    
+    qDebug() << "Magnitude distribution:";
+    for (auto it = magHistogram.begin(); it != magHistogram.end(); ++it) {
+        qDebug() << QString("  mag %1-%2: %3 stars")
+                    .arg(it.key()).arg(it.key() + 1).arg(it.value());
+    }
+    
+    if (!spectralTypeHistogram.isEmpty()) {
+        qDebug() << "Spectral type distribution:";
+        for (auto it = spectralTypeHistogram.begin(); it != spectralTypeHistogram.end(); ++it) {
+            qDebug() << QString("  %1-type: %2 stars").arg(it.key()).arg(it.value());
+        }
+    }
+    
+    qDebug() << QString("Data quality: Gaia GDR3 with proper motions applied to epoch %.1f")
+                .arg(2025.5);
+}
 
 // Static member definition (add to .cpp file)
-QString Local2MASSCatalog::s_catalogPath;
+// QString Local2MASSCatalog::s_catalogPath;
 
 StarCatalogValidator::StarCatalogValidator(QObject* parent)
     : QObject(parent)
@@ -30,8 +324,7 @@ StarCatalogValidator::StarCatalogValidator(QObject* parent)
     , m_curl(curl_easy_init())
 {
     initializeTolerances();
-    // Initialize local 2MASS catalog
-    initializeLocal2MASS();
+    initializeGaiaDR3();
         
     // Initialize transformation matrix
     for (int i = 0; i < 4; ++i) {
@@ -293,17 +586,6 @@ void StarCatalogValidator::updateWCSMatrix()
 static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
     return size * nmemb;
-}
-
-// Update the queryCatalog method to handle Local2MASS
-void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
-{
-    if (!m_wcsData.isValid) {
-        emit errorSignal("No valid WCS data available for catalog query");
-        return;
-    }
-    
-    queryLocal2MASS(centerRA, centerDec, radiusDegrees);
 }
 
 void StarCatalogValidator::queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees)
@@ -1084,96 +1366,5 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
                   });
         
         qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
-    }
-}
-
-// Update StarCatalogValidator to use local 2MASS catalog
-void StarCatalogValidator::initializeLocal2MASS()
-{
-    // Set the path to your 2MASS catalog
-    QString catalogPath = "/Volumes/X10Pro/allsky_2mass/allsky.mag";
-    Local2MASSCatalog::setCatalogPath(catalogPath);
-    
-    if (Local2MASSCatalog::isAvailable()) {
-        qDebug() << "✅" << Local2MASSCatalog::getCatalogInfo();
-    } else {
-        qDebug() << "❌ 2MASS catalog not found at:" << catalogPath;
-        qDebug() << "   Network catalogs will be used as fallback";
-    }
-}
-
-void StarCatalogValidator::queryLocal2MASS(double centerRA, double centerDec, double radiusDegrees)
-{
-    qDebug() << "\n=== QUERYING LOCAL 2MASS CATALOG ===";
-    
-    if (!Local2MASSCatalog::isAvailable()) {
-        qDebug() << "❌ Local 2MASS not available, falling back to network";
-        // Fall back to original network query
-        queryCatalog(centerRA, centerDec, radiusDegrees);
-        return;
-    }
-    
-    emit catalogQueryStarted();
-    
-    // Query local catalog
-    auto stars2mass = Local2MASSCatalog::queryRegion(centerRA, centerDec, radiusDegrees, m_magnitudeLimit);
-    
-    // Convert to our CatalogStar format
-    m_catalogStars.clear();
-    for (const auto& star : stars2mass) {
-        CatalogStar catalogStar(star.id, star.ra, star.dec, star.magnitude);
-        
-        // Calculate pixel position
-        catalogStar.pixelPos = skyToPixel(star.ra, star.dec);
-        
-        // Check if in image bounds
-        catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && catalogStar.pixelPos.x() < m_wcsData.width && 
-                              catalogStar.pixelPos.y() >= 0 && catalogStar.pixelPos.y() < m_wcsData.height);
-        
-        m_catalogStars.append(catalogStar);
-    }
-    
-    // Add bright stars from local database (for stars like Betelgeuse that might be missing/wrong in 2MASS)
-    addBrightStarsFromDatabase(centerRA, centerDec, radiusDegrees);
-    
-    QString message = QString("Retrieved %1 stars from local 2MASS catalog").arg(m_catalogStars.size());
-    qDebug() << "✅" << message;
-    
-    emit catalogQueryFinished(true, message);
-}
-
-// Add a method to show catalog statistics in the UI
-void StarCatalogValidator::showCatalogStats() const
-{
-    if (m_catalogStars.isEmpty()) {
-        qDebug() << "No catalog stars loaded";
-        return;
-    }
-    
-    // Magnitude distribution
-    QMap<int, int> magHistogram;
-    int validStars = 0;
-    double brightestMag = 99.0;
-    double faintestMag = -99.0;
-    
-    for (const auto& star : m_catalogStars) {
-        if (star.isValid) validStars++;
-        
-        int magBin = static_cast<int>(std::floor(star.magnitude));
-        magHistogram[magBin]++;
-        
-        brightestMag = std::min(brightestMag, star.magnitude);
-        faintestMag = std::max(faintestMag, star.magnitude);
-    }
-    
-    qDebug() << "\n=== CATALOG STATISTICS ===";
-    qDebug() << QString("Total stars: %1").arg(m_catalogStars.size());
-    qDebug() << QString("Stars in image bounds: %1").arg(validStars);
-    qDebug() << QString("Magnitude range: %.1f to %.1f").arg(brightestMag).arg(faintestMag);
-    qDebug() << "Magnitude distribution:";
-    
-    for (auto it = magHistogram.begin(); it != magHistogram.end(); ++it) {
-        qDebug() << QString("  mag %1-%2: %3 stars")
-                    .arg(it.key()).arg(it.key() + 1).arg(it.value());
     }
 }

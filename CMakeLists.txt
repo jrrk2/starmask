@@ -126,6 +126,7 @@ set(PROJECT_INCLUDE_DIRS
 )
 
 set(SOURCES
+    GaiaGDR3Catalog.cpp
     ImageDisplayWidget.cpp
     ImageReader.cpp
     ImageStatistics.cpp
@@ -146,6 +147,7 @@ set(SOURCES
 )
 
 set(HEADERS
+    GaiaGDR3Catalog.h
     ImageDisplayWidget.h
     ImageReader.h
     ImageStatistics.h
