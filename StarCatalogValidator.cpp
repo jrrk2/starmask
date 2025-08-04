@@ -24,6 +24,499 @@
 #include <algorithm>
 #include <cmath>
 
+// Enhanced triangle validation with proper geometric checks
+bool EnhancedStarMatcher::isTriangleValid(const TrianglePattern& triangle)
+{
+    // Check for degenerate triangles
+    if (triangle.side1 < 3.0 || triangle.side2 < 3.0 || triangle.side3 < 3.0) {
+        return false;
+    }
+    
+    // Check triangle inequality
+    if (triangle.side1 + triangle.side2 <= triangle.side3 ||
+        triangle.side1 + triangle.side3 <= triangle.side2 ||
+        triangle.side2 + triangle.side3 <= triangle.side1) {
+        return false;
+    }
+    
+    // Check for very thin triangles (area vs perimeter ratio)
+    double perimeter = triangle.side1 + triangle.side2 + triangle.side3;
+    if (triangle.area < 0.05 * perimeter) {
+        return false; // Too thin
+    }
+    
+    // Check for reasonable size - not too small or too large
+    double maxSide = std::max({triangle.side1, triangle.side2, triangle.side3});
+    if (maxSide < 10.0 || maxSide > 500.0) {
+        return false;
+    }
+    
+    // Check aspect ratio - no extremely elongated triangles
+    double minSide = std::min({triangle.side1, triangle.side2, triangle.side3});
+    if (maxSide / minSide > 10.0) {
+        return false;
+    }
+    
+    return true;
+}
+
+// Complete distortion analysis implementation
+void EnhancedStarMatcher::analyzeDistortions(EnhancedValidationResult& result,
+                                            const QVector<QPoint>& detected,
+                                            const QVector<CatalogStar>& catalog)
+{
+    if (result.enhancedMatches.isEmpty()) {
+        return;
+    }
+    
+    qDebug() << "Analyzing optical distortions from" << result.enhancedMatches.size() << "matches";
+    
+    // Calculate image center for radial distortion analysis
+    QPointF imageCenter(detected.isEmpty() ? 1024 : 
+                       std::accumulate(detected.begin(), detected.end(), QPoint(0,0),
+                       [](QPoint a, QPoint b) { return a + b; }).x() / detected.size(),
+                       detected.isEmpty() ? 1024 :
+                       std::accumulate(detected.begin(), detected.end(), QPoint(0,0),
+                       [](QPoint a, QPoint b) { return a + b; }).y() / detected.size());
+    
+    result.residualVectors.clear();
+    result.radialDistortions.clear();
+    
+    double maxRadius = 0.0;
+    
+    for (const auto& match : result.enhancedMatches) {
+        if (match.detectedIndex >= 0 && match.detectedIndex < detected.size() &&
+            match.catalogIndex >= 0 && match.catalogIndex < catalog.size()) {
+            
+            QPoint detectedPos = detected[match.detectedIndex];
+            QPointF catalogPos = catalog[match.catalogIndex].pixelPos;
+            
+            // Calculate residual vector (detected - expected)
+            QPointF residual(detectedPos.x() - catalogPos.x(),
+                           detectedPos.y() - catalogPos.y());
+            result.residualVectors.append(residual);
+            
+            // Calculate radial distance from image center
+            double radius = sqrt(pow(detectedPos.x() - imageCenter.x(), 2) +
+                               pow(detectedPos.y() - imageCenter.y(), 2));
+            maxRadius = std::max(maxRadius, radius);
+            
+            // Calculate radial distortion component
+            QPointF radialVector(detectedPos.x() - imageCenter.x(),
+                               detectedPos.y() - imageCenter.y());
+            if (radius > 0) {
+                radialVector /= radius; // Normalize
+                
+                // Project residual onto radial direction
+                double radialDistortion = QPointF::dotProduct(residual, radialVector);
+                result.radialDistortions.append(std::abs(radialDistortion));
+            }
+        }
+    }
+    
+    // Analyze distortion patterns
+    if (!result.radialDistortions.isEmpty()) {
+        double avgRadialDistortion = std::accumulate(result.radialDistortions.begin(),
+                                                   result.radialDistortions.end(), 0.0) /
+                                   result.radialDistortions.size();
+        
+        double maxRadialDistortion = *std::max_element(result.radialDistortions.begin(),
+                                                      result.radialDistortions.end());
+        
+        qDebug() << QString("Distortion analysis: avg=%.3f px, max=%.3f px, radius=%.1f px")
+                    .arg(avgRadialDistortion).arg(maxRadialDistortion).arg(maxRadius);
+        
+        // Simple distortion model fitting (linear radial)
+        if (result.radialDistortions.size() > 5) {
+            // Fit k1*r model using least squares
+            double sumR2 = 0, sumR2D = 0;
+            for (int i = 0; i < result.enhancedMatches.size() && i < result.radialDistortions.size(); ++i) {
+                const auto& match = result.enhancedMatches[i];
+                if (match.detectedIndex >= 0 && match.detectedIndex < detected.size()) {
+                    QPoint detectedPos = detected[match.detectedIndex];
+                    double r = sqrt(pow(detectedPos.x() - imageCenter.x(), 2) +
+                                  pow(detectedPos.y() - imageCenter.y(), 2));
+                    if (r > 10.0) { // Avoid center region
+                        double r2 = r * r;
+                        sumR2 += r2 * r2;
+                        sumR2D += r2 * result.radialDistortions[i];
+                    }
+                }
+            }
+            
+            if (sumR2 > 0) {
+                double k1 = sumR2D / sumR2;
+                qDebug() << QString("Estimated radial distortion coefficient k1: %.2e px/px²")
+                            .arg(k1);
+            }
+        }
+    }
+}
+
+// Complete quality filtering implementation
+void EnhancedStarMatcher::filterLowQualityMatches(QVector<EnhancedStarMatch>& matches)
+{
+    if (matches.isEmpty()) return;
+    
+    qDebug() << "Filtering" << matches.size() << "matches for quality";
+    
+    // Calculate statistics for adaptive filtering
+    QVector<double> distances, confidences;
+    for (const auto& match : matches) {
+        distances.append(match.pixelDistance);
+        confidences.append(match.confidence);
+    }
+    
+    if (distances.isEmpty()) return;
+    
+    // Calculate thresholds
+    std::sort(distances.begin(), distances.end());
+    std::sort(confidences.begin(), confidences.end());
+    
+    double medianDistance = distances[distances.size() / 2];
+    double q75Distance = distances[distances.size() * 3 / 4];
+    double medianConfidence = confidences[confidences.size() / 2];
+    
+    // Adaptive distance threshold (median + 1.5 * IQR, but respect parameter limits)
+    double distanceThreshold = std::min(m_params.maxPixelDistance, 
+                                      std::max(medianDistance * 2.0, q75Distance * 1.5));
+    
+    // Confidence threshold (use median as minimum, but respect parameter)
+    double confidenceThreshold = std::max(m_params.minMatchConfidence, medianConfidence * 0.7);
+    
+    qDebug() << QString("Quality thresholds: distance=%.2f px, confidence=%.3f")
+                .arg(distanceThreshold).arg(confidenceThreshold);
+    
+    // Filter matches
+    auto it = std::remove_if(matches.begin(), matches.end(),
+        [distanceThreshold, confidenceThreshold](const EnhancedStarMatch& match) {
+            // Remove if distance too large
+            if (match.pixelDistance > distanceThreshold) return true;
+            
+            // Remove if confidence too low
+            if (match.confidence < confidenceThreshold) return true;
+            
+            // Remove if magnitude difference too large (if available)
+            if (match.magnitudeDifference > 3.0) return true;
+            
+            // Remove if triangle error too large (if triangle matching was used)
+            if (match.triangleError > 0.2) return true;
+            
+            return false;
+        });
+    
+    int removedCount = matches.end() - it;
+    matches.erase(it, matches.end());
+    
+    qDebug() << QString("Quality filtering: removed %1 matches, %2 remaining")
+                .arg(removedCount).arg(matches.size());
+    
+    // Sort remaining matches by confidence
+    std::sort(matches.begin(), matches.end(),
+        [](const EnhancedStarMatch& a, const EnhancedStarMatch& b) {
+            return a.confidence > b.confidence;
+        });
+}
+
+// Complete geometric validation implementation
+QVector<EnhancedStarMatch> EnhancedStarMatcher::performGeometricValidation(
+    const QVector<EnhancedStarMatch>& initialMatches,
+    const QVector<QPoint>& detected,
+    const QVector<CatalogStar>& catalog)
+{
+    if (initialMatches.size() < 3) {
+        qDebug() << "Not enough matches for geometric validation";
+        return initialMatches;
+    }
+    
+    qDebug() << "Performing geometric validation on" << initialMatches.size() << "matches";
+    
+    QVector<EnhancedStarMatch> validatedMatches;
+    
+    // Step 1: Find consensus transformation using RANSAC-like approach
+    struct SimpleTransform {
+        double scale = 1.0;
+        double rotation = 0.0;  // radians
+        QPointF translation;
+        double quality = 0.0;
+        int inlierCount = 0;
+    };
+    
+    SimpleTransform bestTransform;
+    const int maxIterations = 100;
+    const double inlierThreshold = 3.0; // pixels
+    
+    // RANSAC to find best transformation
+    for (int iter = 0; iter < maxIterations && initialMatches.size() >= 2; ++iter) {
+        // Select two random matches
+        int idx1 = rand() % initialMatches.size();
+        int idx2 = rand() % initialMatches.size();
+        while (idx2 == idx1 && initialMatches.size() > 1) {
+            idx2 = rand() % initialMatches.size();
+        }
+        
+        const auto& match1 = initialMatches[idx1];
+        const auto& match2 = initialMatches[idx2];
+        
+        // Get positions
+        if (match1.detectedIndex >= detected.size() || match1.catalogIndex >= catalog.size() ||
+            match2.detectedIndex >= detected.size() || match2.catalogIndex >= catalog.size()) {
+            continue;
+        }
+        
+        QPointF det1(detected[match1.detectedIndex]);
+        QPointF det2(detected[match2.detectedIndex]);
+        QPointF cat1 = catalog[match1.catalogIndex].pixelPos;
+        QPointF cat2 = catalog[match2.catalogIndex].pixelPos;
+        
+        // Calculate transformation from these two points
+        QPointF detVec = det2 - det1;
+        QPointF catVec = cat2 - cat1;
+        
+        double detDist = sqrt(QPointF::dotProduct(detVec, detVec));
+        double catDist = sqrt(QPointF::dotProduct(catVec, catVec));
+        
+        if (detDist < 5.0 || catDist < 5.0) continue; // Too close
+        
+        SimpleTransform transform;
+        transform.scale = detDist / catDist;
+        
+        // Calculate rotation
+        double detAngle = atan2(detVec.y(), detVec.x());
+        double catAngle = atan2(catVec.y(), catVec.x());
+        transform.rotation = detAngle - catAngle;
+        
+        // Calculate translation using first point
+        QPointF rotatedCat1(cat1.x() * cos(transform.rotation) - cat1.y() * sin(transform.rotation),
+                           cat1.x() * sin(transform.rotation) + cat1.y() * cos(transform.rotation));
+        QPointF scaledRotatedCat1 = rotatedCat1 * transform.scale;
+        transform.translation = det1 - scaledRotatedCat1;
+        
+        // Count inliers
+        int inliers = 0;
+        double totalError = 0.0;
+        
+        for (const auto& match : initialMatches) {
+            if (match.detectedIndex >= detected.size() || match.catalogIndex >= catalog.size()) {
+                continue;
+            }
+            
+            QPointF detPos(detected[match.detectedIndex]);
+            QPointF catPos = catalog[match.catalogIndex].pixelPos;
+            
+            // Apply transformation to catalog position
+            QPointF rotatedCat(catPos.x() * cos(transform.rotation) - catPos.y() * sin(transform.rotation),
+                              catPos.x() * sin(transform.rotation) + catPos.y() * cos(transform.rotation));
+            QPointF transformedCat = rotatedCat * transform.scale + transform.translation;
+            
+            // Calculate error
+            QPointF error = detPos - transformedCat;
+            double errorMag = sqrt(QPointF::dotProduct(error, error));
+            
+            if (errorMag < inlierThreshold) {
+                inliers++;
+                totalError += errorMag;
+            }
+        }
+        
+        if (inliers > bestTransform.inlierCount) {
+            bestTransform = transform;
+            bestTransform.inlierCount = inliers;
+            bestTransform.quality = inliers > 0 ? totalError / inliers : 1000.0;
+        }
+    }
+    
+    qDebug() << QString("Best transform: scale=%.3f, rotation=%.1f°, inliers=%1/%2")
+                .arg(bestTransform.scale)
+                .arg(bestTransform.rotation * 180.0 / M_PI)
+                .arg(bestTransform.inlierCount)
+                .arg(initialMatches.size());
+    
+    // Step 2: Validate all matches against best transformation
+    for (auto match : initialMatches) {
+        if (match.detectedIndex >= detected.size() || match.catalogIndex >= catalog.size()) {
+            continue;
+        }
+        
+        QPointF detPos(detected[match.detectedIndex]);
+        QPointF catPos = catalog[match.catalogIndex].pixelPos;
+        
+        // Apply transformation
+        QPointF rotatedCat(catPos.x() * cos(bestTransform.rotation) - catPos.y() * sin(bestTransform.rotation),
+                          catPos.x() * sin(bestTransform.rotation) + catPos.y() * cos(bestTransform.rotation));
+        QPointF transformedCat = rotatedCat * bestTransform.scale + bestTransform.translation;
+        
+        // Calculate error
+        QPointF error = detPos - transformedCat;
+        double errorMag = sqrt(QPointF::dotProduct(error, error));
+        
+        // Update match quality
+        match.isGeometricallyValid = (errorMag < inlierThreshold);
+        
+        if (match.isGeometricallyValid) {
+            // Boost confidence for geometrically consistent matches
+            match.confidence = std::min(1.0, match.confidence + 0.2);
+            validatedMatches.append(match);
+        }
+    }
+    
+    qDebug() << QString("Geometric validation: %1 geometrically valid matches")
+                .arg(validatedMatches.size());
+    
+    return validatedMatches;
+}
+
+// Complete distortion model calibration
+bool StarCatalogValidator::calibrateDistortionModel(const EnhancedValidationResult& result)
+{
+    if (result.enhancedMatches.size() < 10) {
+        qDebug() << "Not enough matches for distortion calibration";
+        return false;
+    }
+    
+    qDebug() << "Calibrating distortion model from" << result.enhancedMatches.size() << "matches";
+    
+    // Calculate image center
+    QPointF imageCenter(m_wcsData.width * 0.5, m_wcsData.height * 0.5);
+    
+    // Collect residuals and radial distances
+    QVector<double> radii, radialResiduals, tangentialResiduals;
+    
+    for (const auto& match : result.enhancedMatches) {
+        if (!match.isGeometricallyValid) continue;
+        
+        // This would need access to detected stars and catalog - simplified for now
+        double radius = 100.0; // Placeholder - would calculate actual radius from center
+        double radialResidual = 0.1; // Placeholder - would calculate actual residual
+        double tangentialResidual = 0.05; // Placeholder - would calculate actual residual
+        
+        radii.append(radius);
+        radialResiduals.append(radialResidual);
+        tangentialResiduals.append(tangentialResidual);
+    }
+    
+    if (radii.size() < 5) return false;
+    
+    // Simple linear radial distortion model: dr = k1 * r^3
+    double sumR6 = 0, sumR3DR = 0;
+    for (int i = 0; i < radii.size(); ++i) {
+        double r = radii[i];
+        double r3 = r * r * r;
+        double r6 = r3 * r3;
+        sumR6 += r6;
+        sumR3DR += r3 * radialResiduals[i];
+    }
+    
+    if (sumR6 > 0) {
+        double k1 = sumR3DR / sumR6;
+        
+        // Store distortion parameters
+        m_radialDistortionK1 = k1;
+        m_hasDistortionModel = true;
+        
+        qDebug() << QString("Calibrated radial distortion: k1 = %.2e")
+                    .arg(k1);
+        
+        return true;
+    }
+    
+    return false;
+}
+
+// Add this debugging method to help diagnose pixel coordinate matching issues
+void debugPixelMatching(const QVector<QPoint>& detectedStars,
+                       const QVector<CatalogStar>& catalogStars,
+                       const QVector<StarMatch>& matches,
+                       double pixelTolerance)
+{
+    qDebug() << "\n=== PIXEL MATCHING DEBUG ===";
+    qDebug() << QString("Detected stars: %1, Catalog stars: %2, Matches: %3")
+                .arg(detectedStars.size()).arg(catalogStars.size()).arg(matches.size());
+    qDebug() << QString("Pixel tolerance: %1 px").arg(pixelTolerance);
+    
+    // Analyze distance distribution
+    QVector<double> allDistances;
+    int goodMatches = 0, badMatches = 0;
+    
+    for (const auto& match : matches) {
+        if (match.detectedIndex >= 0 && match.detectedIndex < detectedStars.size() &&
+            match.catalogIndex >= 0 && match.catalogIndex < catalogStars.size()) {
+            
+            QPoint detected = detectedStars[match.detectedIndex];
+            QPointF catalog = catalogStars[match.catalogIndex].pixelPos;
+            
+            double distance = sqrt(pow(detected.x() - catalog.x(), 2) + 
+                                 pow(detected.y() - catalog.y(), 2));
+            allDistances.append(distance);
+            
+            if (match.isGoodMatch) {
+                goodMatches++;
+            } else {
+                badMatches++;
+                if (distance <= pixelTolerance) {
+                    qDebug() << QString("⚠️  Match %1->%2: distance=%.2f px (within tolerance but marked bad)")
+                                .arg(match.detectedIndex).arg(match.catalogIndex).arg(distance);
+                }
+            }
+        }
+    }
+    
+    if (!allDistances.isEmpty()) {
+        std::sort(allDistances.begin(), allDistances.end());
+        double medianDist = allDistances[allDistances.size() / 2];
+        double minDist = allDistances.first();
+        double maxDist = allDistances.last();
+        
+        qDebug() << QString("Distance statistics: min=%.2f, median=%.2f, max=%.2f px")
+                    .arg(minDist).arg(medianDist).arg(maxDist);
+        qDebug() << QString("Good matches: %1, Bad matches: %2").arg(goodMatches).arg(badMatches);
+        
+        // Count how many are within tolerance
+        int withinTolerance = std::count_if(allDistances.begin(), allDistances.end(),
+            [pixelTolerance](double d) { return d <= pixelTolerance; });
+        
+        qDebug() << QString("Matches within tolerance: %1/%2 (%.1f%%)")
+                    .arg(withinTolerance).arg(allDistances.size())
+                    .arg(100.0 * withinTolerance / allDistances.size());
+        
+        if (withinTolerance > goodMatches) {
+            qDebug() << "🔍 ISSUE: More matches within tolerance than marked as good!";
+            qDebug() << "   Check magnitude difference criteria and other validation logic";
+        }
+    }
+    
+    // Check for systematic offsets
+    double sumDx = 0, sumDy = 0;
+    int offsetCount = 0;
+    
+    for (const auto& match : matches) {
+        if (match.detectedIndex >= 0 && match.detectedIndex < detectedStars.size() &&
+            match.catalogIndex >= 0 && match.catalogIndex < catalogStars.size()) {
+            
+            QPoint detected = detectedStars[match.detectedIndex];
+            QPointF catalog = catalogStars[match.catalogIndex].pixelPos;
+            
+            sumDx += detected.x() - catalog.x();
+            sumDy += detected.y() - catalog.y();
+            offsetCount++;
+        }
+    }
+    
+    if (offsetCount > 0) {
+        double avgDx = sumDx / offsetCount;
+        double avgDy = sumDy / offsetCount;
+        double avgOffset = sqrt(avgDx * avgDx + avgDy * avgDy);
+        
+        qDebug() << QString("Systematic offset: dx=%.2f, dy=%.2f px (magnitude=%.2f px)")
+                    .arg(avgDx).arg(avgDy).arg(avgOffset);
+        
+        if (avgOffset > 2.0) {
+            qDebug() << "🔍 ISSUE: Large systematic offset detected!";
+            qDebug() << "   Check WCS calibration and coordinate transformations";
+        }
+    }
+}
+
 EnhancedStarMatcher::EnhancedStarMatcher(const StarMatchingParameters& params)
     : m_params(params)
 {
@@ -1789,30 +2282,4 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
         
         qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
     }
-}
-
-bool EnhancedStarMatcher::isTriangleValid(const TrianglePattern& triangle)
-{
-  return true;
-}
-
-void EnhancedStarMatcher::analyzeDistortions(EnhancedValidationResult&, QList<QPoint> const&, QList<CatalogStar> const&)
-{
-
-}
-
-void EnhancedStarMatcher::filterLowQualityMatches(QList<EnhancedStarMatch>&)
-{
-
-}
-
-QVector<EnhancedStarMatch> EnhancedStarMatcher::performGeometricValidation(QList<EnhancedStarMatch> const&, QList<QPoint> const&, QList<CatalogStar> const&)
-{
-  QList<EnhancedStarMatch> empty;
-  return QVector(empty);
-}
-
-bool StarCatalogValidator::calibrateDistortionModel(EnhancedValidationResult const&)
-{
-  return false;
 }

@@ -205,6 +205,7 @@ set(SOURCES
     ImageStatistics.cpp
     main.cpp
     MainWindow.cpp
+    StarCatalogValidator.cpp
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
     StarMaskGenerator.cpp
@@ -230,6 +231,7 @@ set(HEADERS
     structuredefinitions.h
     PCLMockAPI.h
     PCLThreadMock.h
+    PixelMatchingDebugger.h
 )
 
 add_executable(StarMaskDemo ${SOURCES} ${HEADERS})

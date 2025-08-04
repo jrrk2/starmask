@@ -19,6 +19,7 @@
 #include "ImageDisplayWidget.h"
 #include "StarMaskGenerator.h"
 #include "StarCatalogValidator.h"
+#include "PixelMatchingDebugger.h" // Include the debugger header
 
 class MainWindow : public QMainWindow
 {
@@ -54,6 +55,9 @@ private slots:
     void onExportMatchingResults();
     void onVisualizeDistortions();
     void onCalibrateDistortionModel();
+    void onDebugPixelMatching();
+    void onAnalyzeMatchingCriteria();
+    void onTestParameterSensitivity();
   
 private:
     void setupUI();
@@ -83,6 +87,17 @@ private:
     StarMatchingParameters getMatchingParametersFromUI();
     void displayEnhancedResults(const EnhancedValidationResult& result);
     void visualizeTrianglePatterns(const EnhancedValidationResult& result);
+    void setupDebuggingMenu();
+    void showPixelDebugDialog();
+    void showWCSDebugInfo();
+    void testWCSTransformations();
+    void rerunValidationWithDebug();
+    void testPixelMatchingDebug();
+    void addTestButton();
+    void quickDiagnoseCurrentMatches();
+    void debugCurrentValidationResults();
+
+    std::unique_ptr<PixelMatchingDebugger> m_pixelDebugger;
   
     // UI Components
     QWidget* m_centralWidget;
