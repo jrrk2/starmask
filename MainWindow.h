@@ -48,6 +48,12 @@ private slots:
     void onStarOverlayToggled(bool visible);
     void onCatalogOverlayToggled(bool visible);
     void onValidationOverlayToggled(bool visible);
+    void onValidateStarsEnhanced();
+    void onMatchingParametersChanged();
+    void onShowMatchingDetails();
+    void onExportMatchingResults();
+    void onVisualizeDistortions();
+    void onCalibrateDistortionModel();
   
 private:
     void setupUI();
@@ -72,6 +78,11 @@ private:
     void onDetectStarsAdvanced();
     void onDetectStarsSimple();
     void setupStarDetectionControls();
+    void setupEnhancedMatchingControls();
+    void updateEnhancedMatchingControls();
+    StarMatchingParameters getMatchingParametersFromUI();
+    void displayEnhancedResults(const EnhancedValidationResult& result);
+    void visualizeTrianglePatterns(const EnhancedValidationResult& result);
   
     // UI Components
     QWidget* m_centralWidget;
@@ -135,6 +146,37 @@ private:
     QCheckBox* m_enablePSFFittingCheck;
     QPushButton* m_detectAdvancedButton;
     QPushButton* m_detectSimpleButton;
+
+    // Enhanced matching controls
+    QGroupBox* m_enhancedMatchingGroup;
+    QVBoxLayout* m_enhancedMatchingLayout;
+    
+    // Distance and search parameters
+    QDoubleSpinBox* m_maxPixelDistanceSpin;
+    QDoubleSpinBox* m_searchRadiusSpin;
+    QDoubleSpinBox* m_maxMagnitudeDiffSpin;
+    
+    // Pattern matching controls
+    QCheckBox* m_useTriangleMatchingCheck;
+    QSpinBox* m_minTriangleStarsSpin;
+    QDoubleSpinBox* m_triangleToleranceSpin;
+    
+    // Quality controls
+    QDoubleSpinBox* m_minMatchConfidenceSpin;
+    QSpinBox* m_minMatchesValidationSpin;
+    
+    // Advanced options
+    QCheckBox* m_useDistortionModelCheck;
+    QCheckBox* m_useProperMotionCheck;
+    QCheckBox* m_useBayesianMatchingCheck;
+    
+    // Results display
+    QTextEdit* m_enhancedResultsText;
+    QProgressBar* m_matchingProgressBar;
+    
+    // Enhanced validation results
+    EnhancedValidationResult m_lastEnhancedValidation;
+    bool m_enhancedValidationComplete;
   
 };
 

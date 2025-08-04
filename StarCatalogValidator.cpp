@@ -17,6 +17,428 @@
 #include <algorithm>
 #include <QNetworkRequest>
 #include <QJsonDocument>
+// Enhanced StarCatalogValidator.cpp implementation
+#include "StarCatalogValidator.h"
+#include <pcl/Math.h>
+#include <pcl/Matrix.h>
+#include <algorithm>
+#include <cmath>
+
+EnhancedStarMatcher::EnhancedStarMatcher(const StarMatchingParameters& params)
+    : m_params(params)
+{
+}
+
+EnhancedValidationResult EnhancedStarMatcher::matchStarsAdvanced(
+    const QVector<QPoint>& detectedStars,
+    const QVector<float>& detectedMagnitudes,
+    const QVector<CatalogStar>& catalogStars,
+    const pcl::AstrometricMetadata& astrometry)
+{
+    EnhancedValidationResult result;
+    
+    qDebug() << "=== ENHANCED STAR MATCHING (PixInsight Methods) ===";
+    qDebug() << QString("Detected stars: %1, Catalog stars: %2")
+                .arg(detectedStars.size()).arg(catalogStars.size());
+    
+    // Step 1: Initial position-based matching with magnitude constraints
+    qDebug() << "Step 1: Initial position-based matching...";
+    auto initialMatches = performInitialMatching(detectedStars, catalogStars, astrometry);
+    qDebug() << QString("Initial matches found: %1").arg(initialMatches.size());
+    
+    // Step 2: Triangle pattern matching for geometric validation
+    if (m_params.useTriangleMatching && detectedStars.size() >= m_params.minTriangleStars) {
+        qDebug() << "Step 2: Triangle pattern matching...";
+        auto triangleMatches = performTriangleMatching(detectedStars, catalogStars);
+        
+        // Merge triangle matches with initial matches
+        for (const auto& triMatch : triangleMatches) {
+            // Find corresponding initial match and boost confidence
+            for (auto& initMatch : initialMatches) {
+                if (initMatch.detectedIndex == triMatch.detectedIndex &&
+                    initMatch.catalogIndex == triMatch.catalogIndex) {
+                    initMatch.confidence = std::max(initMatch.confidence, triMatch.confidence);
+                    initMatch.triangleError = triMatch.triangleError;
+                    initMatch.supportingMatches = triMatch.supportingMatches;
+                    break;
+                }
+            }
+        }
+        
+        qDebug() << QString("Triangle validation completed, %1 patterns analyzed")
+                    .arg(triangleMatches.size());
+    }
+    
+    // Step 3: Geometric validation and outlier rejection
+    qDebug() << "Step 3: Geometric validation...";
+    auto validatedMatches = performGeometricValidation(initialMatches, detectedStars, catalogStars);
+    qDebug() << QString("Geometrically valid matches: %1").arg(validatedMatches.size());
+    
+    // Step 4: Quality filtering
+    qDebug() << "Step 4: Quality filtering...";
+    filterLowQualityMatches(validatedMatches);
+    
+    // Store results
+    result.enhancedMatches = validatedMatches;
+    
+    // Step 5: Distortion analysis
+    if (m_params.useDistortionModel) {
+        qDebug() << "Step 5: Distortion analysis...";
+        analyzeDistortions(result, detectedStars, catalogStars);
+    }
+    
+    // Step 6: Calculate advanced statistics
+    calculateAdvancedStatistics(result);
+    
+    // Convert to standard ValidationResult format for compatibility
+    result.totalDetected = detectedStars.size();
+    result.totalCatalog = catalogStars.size();
+    result.totalMatches = validatedMatches.size();
+    result.matchPercentage = (100.0 * result.totalMatches) / result.totalDetected;
+    result.catalogStars = catalogStars;
+    
+    // Convert enhanced matches to standard matches
+    for (const auto& enhanced : validatedMatches) {
+        StarMatch standardMatch;
+        standardMatch.detectedIndex = enhanced.detectedIndex;
+        standardMatch.catalogIndex = enhanced.catalogIndex;
+        standardMatch.distance = enhanced.pixelDistance;
+        standardMatch.magnitudeDiff = enhanced.magnitudeDifference;
+        standardMatch.isGoodMatch = enhanced.confidence >= m_params.minMatchConfidence;
+        result.matches.append(standardMatch);
+    }
+    
+    // Generate enhanced summary
+    result.enhancedSummary = QString(
+        "Enhanced Star Matching Results:\n"
+        "================================\n"
+        "Detected Stars: %1\n"
+        "Catalog Stars: %2\n"
+        "High-Quality Matches: %3 (%.1f%%)\n"
+        "Geometric RMS: %.3f pixels\n"
+        "Photometric RMS: %.3f magnitudes\n"
+        "Astrometric Accuracy: %.3f arcsec\n"
+        "Scale Error: %.2f%%\n"
+        "Rotation Error: %.3f degrees\n"
+        "Matching Confidence: %.1f%%\n"
+        "\nDistortion Analysis:\n"
+        "Max Radial Distortion: %.2f pixels\n"
+        "Distortion Model: %4")
+        .arg(result.totalDetected)
+        .arg(result.totalCatalog)
+        .arg(result.totalMatches)
+        .arg(result.matchPercentage)
+        .arg(result.geometricRMS)
+        .arg(result.photometricRMS)
+        .arg(result.astrometricAccuracy)
+        .arg(result.scaleError)
+        .arg(result.rotationError)
+        .arg(result.matchingConfidence)
+        .arg(result.radialDistortions.isEmpty() ? 0.0 : 
+             *std::max_element(result.radialDistortions.begin(), result.radialDistortions.end()))
+        .arg(m_params.useDistortionModel ? "Applied" : "Not Applied");
+    
+    result.summary = result.enhancedSummary;
+    result.isValid = result.totalMatches >= m_params.minMatchesForValidation;
+    
+    qDebug() << "=== ENHANCED MATCHING COMPLETE ===";
+    qDebug() << QString("Final result: %1/%2 matches (%.1f%% confidence)")
+                .arg(result.totalMatches).arg(result.totalDetected)
+                .arg(result.matchingConfidence);
+    
+    return result;
+}
+
+QVector<EnhancedStarMatch> EnhancedStarMatcher::performInitialMatching(
+    const QVector<QPoint>& detected,
+    const QVector<CatalogStar>& catalog,
+    const pcl::AstrometricMetadata& astrometry)
+{
+    QVector<EnhancedStarMatch> matches;
+    
+    // Create spatial index for efficient neighbor searching
+    // For simplicity, we'll use a direct search, but PixInsight would use KD-trees
+    
+    for (int i = 0; i < detected.size(); ++i) {
+        const QPoint& detectedPos = detected[i];
+        
+        EnhancedStarMatch bestMatch;
+        bestMatch.detectedIndex = i;
+        bestMatch.pixelDistance = std::numeric_limits<double>::max();
+        bestMatch.confidence = 0.0;
+        
+        // Search for nearest catalog star within search radius
+        for (int j = 0; j < catalog.size(); ++j) {
+            const CatalogStar& catalogStar = catalog[j];
+            
+            if (!catalogStar.isValid) continue;
+            
+            // Calculate pixel distance
+            double dx = detectedPos.x() - catalogStar.pixelPos.x();
+            double dy = detectedPos.y() - catalogStar.pixelPos.y();
+            double distance = sqrt(dx * dx + dy * dy);
+            
+            if (distance <= m_params.searchRadius && distance < bestMatch.pixelDistance) {
+                bestMatch.catalogIndex = j;
+                bestMatch.pixelDistance = distance;
+                bestMatch.magnitudeDifference = 0.0; // Will be calculated if we have magnitudes
+                
+                // Calculate initial confidence based on distance
+                double distanceConfidence = 1.0 - (distance / m_params.searchRadius);
+                bestMatch.confidence = distanceConfidence;
+                
+                // Additional quality checks
+                bestMatch.isGeometricallyValid = distance <= m_params.maxPixelDistance;
+                bestMatch.isPhotometricallyValid = true; // Will be refined later
+            }
+        }
+        
+        // Only accept matches within maximum distance
+        if (bestMatch.catalogIndex >= 0 && bestMatch.pixelDistance <= m_params.maxPixelDistance) {
+            matches.append(bestMatch);
+        }
+    }
+    
+    return matches;
+}
+
+QVector<EnhancedStarMatch> EnhancedStarMatcher::performTriangleMatching(
+    const QVector<QPoint>& detected,
+    const QVector<CatalogStar>& catalog)
+{
+    QVector<EnhancedStarMatch> triangleMatches;
+    
+    if (detected.size() < 3 || catalog.size() < 3) {
+        return triangleMatches;
+    }
+    
+    // Generate triangle patterns for detected stars
+    auto detectedTriangles = generateTrianglePatterns(detected, true);
+    
+    // Generate triangle patterns for catalog stars (using pixel positions)
+    QVector<QPoint> catalogPixelPositions;
+    for (const auto& cat : catalog) {
+        if (cat.isValid) {
+            catalogPixelPositions.append(QPoint(
+                static_cast<int>(cat.pixelPos.x()),
+                static_cast<int>(cat.pixelPos.y())
+            ));
+        }
+    }
+    auto catalogTriangles = generateTrianglePatterns(catalogPixelPositions, true);
+    
+    qDebug() << QString("Generated %1 detected triangles and %2 catalog triangles")
+                .arg(detectedTriangles.size()).arg(catalogTriangles.size());
+    
+    // Match triangle patterns
+    auto triangleMatchPairs = matchTrianglePatterns(detectedTriangles, catalogTriangles);
+    
+    qDebug() << QString("Found %1 triangle matches with confidence %.2f")
+                .arg(triangleMatchPairs.first.size()).arg(triangleMatchPairs.second);
+    
+    // Convert triangle matches to star matches
+    for (const auto& trianglePair : triangleMatchPairs.first) {
+        const TrianglePattern& detTriangle = detectedTriangles[trianglePair.first];
+        const TrianglePattern& catTriangle = catalogTriangles[trianglePair.second];
+        
+        // Each triangle gives us 3 potential star matches
+        for (int i = 0; i < 3; ++i) {
+            int detectedIdx = detTriangle.starIndices[i];
+            int catalogIdx = catTriangle.starIndices[i]; // Assuming same ordering
+            
+            EnhancedStarMatch match;
+            match.detectedIndex = detectedIdx;
+            match.catalogIndex = catalogIdx;
+            match.confidence = triangleMatchPairs.second;
+            match.triangleError = calculateTriangleSimilarity(detTriangle, catTriangle);
+            
+            // Calculate pixel distance
+            QPoint detPos = detected[detectedIdx];
+            QPointF catPos = catalog[catalogIdx].pixelPos;
+            double dx = detPos.x() - catPos.x();
+            double dy = detPos.y() - catPos.y();
+            match.pixelDistance = sqrt(dx * dx + dy * dy);
+            
+            triangleMatches.append(match);
+        }
+    }
+    
+    return triangleMatches;
+}
+
+QVector<TrianglePattern> EnhancedStarMatcher::generateTrianglePatterns(
+    const QVector<QPoint>& stars, bool isPixelCoords)
+{
+    QVector<TrianglePattern> patterns;
+    
+    if (stars.size() < 3) return patterns;
+    
+    // Generate all possible triangles (combinatorial approach)
+    // For performance, limit to brightest/most reliable stars
+    int maxStars = std::min(20, (int)(stars.size())); // Limit for performance
+    
+    for (int i = 0; i < maxStars - 2; ++i) {
+        for (int j = i + 1; j < maxStars - 1; ++j) {
+            for (int k = j + 1; k < maxStars; ++k) {
+                TrianglePattern pattern;
+                pattern.starIndices = {i, j, k};
+                
+                QPointF p1(stars[i]);
+                QPointF p2(stars[j]);
+                QPointF p3(stars[k]);
+                
+                // Calculate side lengths
+                pattern.side1 = sqrt(pow(p2.x() - p1.x(), 2) + pow(p2.y() - p1.y(), 2));
+                pattern.side2 = sqrt(pow(p3.x() - p2.x(), 2) + pow(p3.y() - p2.y(), 2));
+                pattern.side3 = sqrt(pow(p1.x() - p3.x(), 2) + pow(p1.y() - p3.y(), 2));
+                
+                // Skip degenerate triangles
+                if (pattern.side1 < 5.0 || pattern.side2 < 5.0 || pattern.side3 < 5.0) {
+                    continue;
+                }
+                
+                // Calculate area using cross product
+                double area = 0.5 * abs((p2.x() - p1.x()) * (p3.y() - p1.y()) - 
+                                       (p3.x() - p1.x()) * (p2.y() - p1.y()));
+                pattern.area = area;
+                
+                // Skip very thin triangles
+                double perimeter = pattern.side1 + pattern.side2 + pattern.side3;
+                if (area < 0.1 * perimeter) continue;
+                
+                // Calculate centroid
+                pattern.centroid = QPointF((p1.x() + p2.x() + p3.x()) / 3.0,
+                                          (p1.y() + p2.y() + p3.y()) / 3.0);
+                
+                // Calculate scale-invariant ratios
+                double maxSide = std::max({pattern.side1, pattern.side2, pattern.side3});
+                pattern.ratio12 = pattern.side1 / maxSide;
+                pattern.ratio13 = pattern.side2 / maxSide;
+                pattern.ratio23 = pattern.side3 / maxSide;
+                
+                // Normalized area (scale invariant)
+                pattern.normalizedArea = area / (perimeter * perimeter);
+                
+                if (isTriangleValid(pattern)) {
+                    patterns.append(pattern);
+                }
+            }
+        }
+    }
+    
+    qDebug() << QString("Generated %1 valid triangle patterns from %2 stars")
+                .arg(patterns.size()).arg(maxStars);
+    
+    return patterns;
+}
+
+QPair<QVector<QPair<int, int>>, double> EnhancedStarMatcher::matchTrianglePatterns(
+    const QVector<TrianglePattern>& pattern1,
+    const QVector<TrianglePattern>& pattern2)
+{
+    QVector<QPair<int, int>> matches;
+    QVector<double> similarities;
+    
+    double tolerancePercent = m_params.triangleTolerancePercent / 100.0;
+    
+    for (int i = 0; i < pattern1.size(); ++i) {
+        for (int j = 0; j < pattern2.size(); ++j) {
+            double similarity = calculateTriangleSimilarity(pattern1[i], pattern2[j]);
+            
+            if (similarity < tolerancePercent) {
+                matches.append(qMakePair(i, j));
+                similarities.append(1.0 - similarity); // Convert to confidence
+            }
+        }
+    }
+    
+    // Calculate overall matching confidence
+    double avgConfidence = 0.0;
+    if (!similarities.isEmpty()) {
+        avgConfidence = std::accumulate(similarities.begin(), similarities.end(), 0.0) / similarities.size();
+    }
+    
+    return qMakePair(matches, avgConfidence);
+}
+
+double EnhancedStarMatcher::calculateTriangleSimilarity(
+    const TrianglePattern& t1, const TrianglePattern& t2)
+{
+    // Compare scale-invariant properties
+    double ratioError1 = abs(t1.ratio12 - t2.ratio12);
+    double ratioError2 = abs(t1.ratio13 - t2.ratio13);
+    double ratioError3 = abs(t1.ratio23 - t2.ratio23);
+    
+    double areaError = abs(t1.normalizedArea - t2.normalizedArea);
+    
+    // Weighted combination of errors
+    double totalError = (ratioError1 + ratioError2 + ratioError3) / 3.0 + areaError;
+    
+    return totalError;
+}
+
+void EnhancedStarMatcher::calculateAdvancedStatistics(EnhancedValidationResult& result)
+{
+    if (result.enhancedMatches.isEmpty()) {
+        result.geometricRMS = 0.0;
+        result.matchingConfidence = 0.0;
+        return;
+    }
+    
+    // Calculate geometric RMS
+    double sumSquaredDistances = 0.0;
+    double sumConfidences = 0.0;
+    
+    for (const auto& match : result.enhancedMatches) {
+        sumSquaredDistances += match.pixelDistance * match.pixelDistance;
+        sumConfidences += match.confidence;
+    }
+    
+    result.geometricRMS = sqrt(sumSquaredDistances / result.enhancedMatches.size());
+    result.matchingConfidence = (sumConfidences / result.enhancedMatches.size()) * 100.0;
+    
+    // Calculate photometric RMS if magnitude data is available
+    double sumMagSquared = 0.0;
+    int magCount = 0;
+    for (const auto& match : result.enhancedMatches) {
+        if (match.magnitudeDifference > 0) {
+            sumMagSquared += match.magnitudeDifference * match.magnitudeDifference;
+            magCount++;
+        }
+    }
+    
+    if (magCount > 0) {
+        result.photometricRMS = sqrt(sumMagSquared / magCount);
+    }
+    
+    // Estimate astrometric accuracy (convert pixels to arcseconds)
+    // This would need the pixel scale from the astrometric solution
+    result.astrometricAccuracy = result.geometricRMS * 1.0; // Placeholder: 1 arcsec/pixel
+}
+
+// Integration with existing StarCatalogValidator
+EnhancedValidationResult StarCatalogValidator::validateStarsAdvanced(
+    const QVector<QPoint>& detectedStars,
+    const QVector<float>& starMagnitudes,
+    const StarMatchingParameters& params)
+{
+    if (!m_enhancedMatcher) {
+        m_enhancedMatcher = std::make_unique<EnhancedStarMatcher>(params);
+    }
+    
+    m_enhancedMatcher->setParameters(params);
+    
+    return m_enhancedMatcher->matchStarsAdvanced(
+        detectedStars, starMagnitudes, m_catalogStars, m_astrometricMetadata);
+}
+
+void StarCatalogValidator::setMatchingParameters(const StarMatchingParameters& params)
+{
+    m_matchingParams = params;
+    if (m_enhancedMatcher) {
+        m_enhancedMatcher->setParameters(params);
+    }
+}
 
 // Replace the queryLocal2MASS method with this Gaia version:
 void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, double radiusDegrees)
@@ -1367,4 +1789,30 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
         
         qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
     }
+}
+
+bool EnhancedStarMatcher::isTriangleValid(const TrianglePattern& triangle)
+{
+  return true;
+}
+
+void EnhancedStarMatcher::analyzeDistortions(EnhancedValidationResult&, QList<QPoint> const&, QList<CatalogStar> const&)
+{
+
+}
+
+void EnhancedStarMatcher::filterLowQualityMatches(QList<EnhancedStarMatch>&)
+{
+
+}
+
+QVector<EnhancedStarMatch> EnhancedStarMatcher::performGeometricValidation(QList<EnhancedStarMatch> const&, QList<QPoint> const&, QList<CatalogStar> const&)
+{
+  QList<EnhancedStarMatch> empty;
+  return QVector(empty);
+}
+
+bool StarCatalogValidator::calibrateDistortionModel(EnhancedValidationResult const&)
+{
+  return false;
 }

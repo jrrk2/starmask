@@ -13,6 +13,7 @@
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QDebug>
+#include <QTableWidget>
 #include <QMenuBar>
 #include <QClipboard>
 #include <QDesktopServices>
@@ -21,6 +22,570 @@
 #include <QJsonDocument>
 #include "GaiaGDR3Catalog.h"
 #include <QTime>
+
+// MainWindow.cpp implementation for enhanced matching
+
+void MainWindow::setupEnhancedMatchingControls()
+{
+    m_enhancedMatchingGroup = new QGroupBox("Enhanced Star Matching (PixInsight Methods)");
+    m_enhancedMatchingLayout = new QVBoxLayout(m_enhancedMatchingGroup);
+    
+    // Distance and search parameters section
+    QGroupBox* distanceGroup = new QGroupBox("Distance Parameters");
+    QGridLayout* distanceLayout = new QGridLayout(distanceGroup);
+    
+    // Maximum pixel distance
+    distanceLayout->addWidget(new QLabel("Max Pixel Distance:"), 0, 0);
+    m_maxPixelDistanceSpin = new QDoubleSpinBox;
+    m_maxPixelDistanceSpin->setRange(1.0, 50.0);
+    m_maxPixelDistanceSpin->setValue(5.0);
+    m_maxPixelDistanceSpin->setDecimals(1);
+    m_maxPixelDistanceSpin->setSuffix(" px");
+    m_maxPixelDistanceSpin->setToolTip("Maximum allowed distance for star matching");
+    distanceLayout->addWidget(m_maxPixelDistanceSpin, 0, 1);
+    
+    // Search radius
+    distanceLayout->addWidget(new QLabel("Search Radius:"), 1, 0);
+    m_searchRadiusSpin = new QDoubleSpinBox;
+    m_searchRadiusSpin->setRange(5.0, 100.0);
+    m_searchRadiusSpin->setValue(10.0);
+    m_searchRadiusSpin->setDecimals(1);
+    m_searchRadiusSpin->setSuffix(" px");
+    m_searchRadiusSpin->setToolTip("Search radius for finding candidate matches");
+    distanceLayout->addWidget(m_searchRadiusSpin, 1, 1);
+    
+    // Maximum magnitude difference
+    distanceLayout->addWidget(new QLabel("Max Magnitude Diff:"), 2, 0);
+    m_maxMagnitudeDiffSpin = new QDoubleSpinBox;
+    m_maxMagnitudeDiffSpin->setRange(0.5, 10.0);
+    m_maxMagnitudeDiffSpin->setValue(2.0);
+    m_maxMagnitudeDiffSpin->setDecimals(1);
+    m_maxMagnitudeDiffSpin->setSuffix(" mag");
+    m_maxMagnitudeDiffSpin->setToolTip("Maximum allowed magnitude difference");
+    distanceLayout->addWidget(m_maxMagnitudeDiffSpin, 2, 1);
+    
+    m_enhancedMatchingLayout->addWidget(distanceGroup);
+    
+    // Pattern matching section
+    QGroupBox* patternGroup = new QGroupBox("Pattern Matching");
+    QGridLayout* patternLayout = new QGridLayout(patternGroup);
+    
+    // Triangle matching
+    m_useTriangleMatchingCheck = new QCheckBox("Enable Triangle Pattern Matching");
+    m_useTriangleMatchingCheck->setChecked(true);
+    m_useTriangleMatchingCheck->setToolTip("Use geometric triangle patterns for robust matching");
+    patternLayout->addWidget(m_useTriangleMatchingCheck, 0, 0, 1, 2);
+    
+    // Minimum triangle stars
+    patternLayout->addWidget(new QLabel("Min Triangle Stars:"), 1, 0);
+    m_minTriangleStarsSpin = new QSpinBox;
+    m_minTriangleStarsSpin->setRange(6, 50);
+    m_minTriangleStarsSpin->setValue(8);
+    m_minTriangleStarsSpin->setToolTip("Minimum stars needed for triangle matching");
+    patternLayout->addWidget(m_minTriangleStarsSpin, 1, 1);
+    
+    // Triangle tolerance
+    patternLayout->addWidget(new QLabel("Triangle Tolerance:"), 2, 0);
+    m_triangleToleranceSpin = new QDoubleSpinBox;
+    m_triangleToleranceSpin->setRange(1.0, 20.0);
+    m_triangleToleranceSpin->setValue(5.0);
+    m_triangleToleranceSpin->setDecimals(1);
+    m_triangleToleranceSpin->setSuffix(" %");
+    m_triangleToleranceSpin->setToolTip("Tolerance for triangle pattern similarity");
+    patternLayout->addWidget(m_triangleToleranceSpin, 2, 1);
+    
+    m_enhancedMatchingLayout->addWidget(patternGroup);
+    
+    // Quality control section
+    QGroupBox* qualityGroup = new QGroupBox("Quality Control");
+    QGridLayout* qualityLayout = new QGridLayout(qualityGroup);
+    
+    // Minimum match confidence
+    qualityLayout->addWidget(new QLabel("Min Match Confidence:"), 0, 0);
+    m_minMatchConfidenceSpin = new QDoubleSpinBox;
+    m_minMatchConfidenceSpin->setRange(0.1, 1.0);
+    m_minMatchConfidenceSpin->setValue(0.7);
+    m_minMatchConfidenceSpin->setDecimals(2);
+    m_minMatchConfidenceSpin->setToolTip("Minimum confidence threshold for valid matches");
+    qualityLayout->addWidget(m_minMatchConfidenceSpin, 0, 1);
+    
+    // Minimum matches for validation
+    qualityLayout->addWidget(new QLabel("Min Matches for Validation:"), 1, 0);
+    m_minMatchesValidationSpin = new QSpinBox;
+    m_minMatchesValidationSpin->setRange(3, 50);
+    m_minMatchesValidationSpin->setValue(5);
+    m_minMatchesValidationSpin->setToolTip("Minimum matches required for successful validation");
+    qualityLayout->addWidget(m_minMatchesValidationSpin, 1, 1);
+    
+    m_enhancedMatchingLayout->addWidget(qualityGroup);
+    
+    // Advanced options section
+    QGroupBox* advancedGroup = new QGroupBox("Advanced Options");
+    QVBoxLayout* advancedLayout = new QVBoxLayout(advancedGroup);
+    
+    m_useDistortionModelCheck = new QCheckBox("Apply Distortion Model");
+    m_useDistortionModelCheck->setChecked(true);
+    m_useDistortionModelCheck->setToolTip("Apply optical distortion correction");
+    advancedLayout->addWidget(m_useDistortionModelCheck);
+    
+    m_useProperMotionCheck = new QCheckBox("Apply Proper Motion Correction");
+    m_useProperMotionCheck->setChecked(true);
+    m_useProperMotionCheck->setToolTip("Correct catalog positions for proper motion");
+    advancedLayout->addWidget(m_useProperMotionCheck);
+    
+    m_useBayesianMatchingCheck = new QCheckBox("Use Bayesian Matching (Experimental)");
+    m_useBayesianMatchingCheck->setChecked(false);
+    m_useBayesianMatchingCheck->setToolTip("Use probabilistic matching approach");
+    advancedLayout->addWidget(m_useBayesianMatchingCheck);
+    
+    m_enhancedMatchingLayout->addWidget(advancedGroup);
+    
+    // Action buttons
+    QHBoxLayout* buttonLayout = new QHBoxLayout;
+    
+    QPushButton* validateEnhancedButton = new QPushButton("Validate (Enhanced)");
+    validateEnhancedButton->setToolTip("Perform enhanced star validation using PixInsight methods");
+    connect(validateEnhancedButton, &QPushButton::clicked, this, &MainWindow::onValidateStarsEnhanced);
+    buttonLayout->addWidget(validateEnhancedButton);
+    
+    QPushButton* showDetailsButton = new QPushButton("Show Details");
+    showDetailsButton->setToolTip("Show detailed matching analysis");
+    connect(showDetailsButton, &QPushButton::clicked, this, &MainWindow::onShowMatchingDetails);
+    buttonLayout->addWidget(showDetailsButton);
+    
+    QPushButton* visualizeButton = new QPushButton("Visualize Distortions");
+    visualizeButton->setToolTip("Visualize optical distortions");
+    connect(visualizeButton, &QPushButton::clicked, this, &MainWindow::onVisualizeDistortions);
+    buttonLayout->addWidget(visualizeButton);
+    
+    QPushButton* exportButton = new QPushButton("Export Results");
+    exportButton->setToolTip("Export matching results to file");
+    connect(exportButton, &QPushButton::clicked, this, &MainWindow::onExportMatchingResults);
+    buttonLayout->addWidget(exportButton);
+    
+    m_enhancedMatchingLayout->addLayout(buttonLayout);
+    
+    // Progress bar
+    m_matchingProgressBar = new QProgressBar;
+    m_matchingProgressBar->setVisible(false);
+    m_enhancedMatchingLayout->addWidget(m_matchingProgressBar);
+    
+    // Enhanced results display
+    QGroupBox* resultsGroup = new QGroupBox("Enhanced Results");
+    QVBoxLayout* resultsLayout = new QVBoxLayout(resultsGroup);
+    
+    m_enhancedResultsText = new QTextEdit;
+    m_enhancedResultsText->setMaximumHeight(200);
+    m_enhancedResultsText->setReadOnly(true);
+    m_enhancedResultsText->setPlainText("Enhanced matching results will appear here.\n\n"
+                                       "Enhanced matching provides:\n"
+                                       "• Triangle pattern recognition\n"
+                                       "• Geometric validation\n" 
+                                       "• Distortion analysis\n"
+                                       "• Statistical quality metrics\n"
+                                       "• Outlier rejection");
+    resultsLayout->addWidget(m_enhancedResultsText);
+    
+    m_enhancedMatchingLayout->addWidget(resultsGroup);
+    
+    // Connect parameter change signals
+    connect(m_maxPixelDistanceSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &MainWindow::onMatchingParametersChanged);
+    connect(m_searchRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &MainWindow::onMatchingParametersChanged);
+    connect(m_useTriangleMatchingCheck, &QCheckBox::toggled,
+            this, &MainWindow::onMatchingParametersChanged);
+    
+    // Initially hide enhanced matching controls (show when needed)
+    m_enhancedMatchingGroup->setVisible(false);
+}
+
+void MainWindow::onValidateStarsEnhanced()
+{
+    if (!m_starsDetected) {
+        QMessageBox::information(this, "Enhanced Validation", "Please detect stars first.");
+        return;
+    }
+    
+    if (!m_hasWCS) {
+        QMessageBox::warning(this, "Enhanced Validation", "No WCS information available.");
+        return;
+    }
+    
+    if (!m_catalogQueried) {
+        QMessageBox::information(this, "Enhanced Validation", "Please query catalog first.");
+        return;
+    }
+    
+    m_statusLabel->setText("Performing enhanced star validation...");
+    m_matchingProgressBar->setVisible(true);
+    m_matchingProgressBar->setRange(0, 0); // Indeterminate
+    QApplication::processEvents();
+    
+    try {
+        // Get matching parameters from UI
+        StarMatchingParameters params = getMatchingParametersFromUI();
+        
+        // Estimate star magnitudes from detection data (rough approximation)
+        QVector<float> estimatedMagnitudes;
+        for (int i = 0; i < m_lastStarMask.starRadii.size(); ++i) {
+            // Very rough magnitude estimation from star radius
+            float radius = m_lastStarMask.starRadii[i];
+            float estimatedMag = 12.0 - 2.5 * log10(radius * radius / 4.0);
+            estimatedMagnitudes.append(estimatedMag);
+        }
+        
+        qDebug() << "Starting enhanced validation with parameters:";
+        qDebug() << "  Max pixel distance:" << params.maxPixelDistance;
+        qDebug() << "  Triangle matching:" << params.useTriangleMatching;
+        qDebug() << "  Min confidence:" << params.minMatchConfidence;
+        
+        // Perform enhanced validation
+        m_lastEnhancedValidation = m_catalogValidator->validateStarsAdvanced(
+            m_lastStarMask.starCenters, estimatedMagnitudes, params);
+        
+        m_enhancedValidationComplete = m_lastEnhancedValidation.isValid;
+        
+        // Display results
+        displayEnhancedResults(m_lastEnhancedValidation);
+        
+        // Update image display with enhanced results
+        m_imageDisplayWidget->setValidationResults(m_lastEnhancedValidation);
+        
+        // Update status
+        QString statusText = QString("Enhanced validation: %1/%2 matches (%.1f%% confidence)")
+                            .arg(m_lastEnhancedValidation.totalMatches)
+                            .arg(m_lastEnhancedValidation.totalDetected)
+                            .arg(m_lastEnhancedValidation.matchingConfidence);
+        m_statusLabel->setText(statusText);
+        
+    } catch (const std::exception& e) {
+        QString errorMsg = QString("Enhanced validation error: %1").arg(e.what());
+        m_statusLabel->setText(errorMsg);
+        QMessageBox::warning(this, "Enhanced Validation Error", errorMsg);
+    }
+    
+    m_matchingProgressBar->setVisible(false);
+    updateEnhancedMatchingControls();
+}
+
+StarMatchingParameters MainWindow::getMatchingParametersFromUI()
+{
+    StarMatchingParameters params;
+    
+    // Distance parameters
+    params.maxPixelDistance = m_maxPixelDistanceSpin->value();
+    params.searchRadius = m_searchRadiusSpin->value();
+    params.maxMagnitudeDifference = m_maxMagnitudeDiffSpin->value();
+    
+    // Pattern matching
+    params.useTriangleMatching = m_useTriangleMatchingCheck->isChecked();
+    params.minTriangleStars = m_minTriangleStarsSpin->value();
+    params.triangleTolerancePercent = m_triangleToleranceSpin->value();
+    
+    // Quality control
+    params.minMatchConfidence = m_minMatchConfidenceSpin->value();
+    params.minMatchesForValidation = m_minMatchesValidationSpin->value();
+    
+    // Advanced options
+    params.useDistortionModel = m_useDistortionModelCheck->isChecked();
+    params.useProperMotionCorrection = m_useProperMotionCheck->isChecked();
+    params.useBayesianMatching = m_useBayesianMatchingCheck->isChecked();
+    
+    return params;
+}
+
+void MainWindow::displayEnhancedResults(const EnhancedValidationResult& result)
+{
+    m_enhancedResultsText->setPlainText(result.enhancedSummary);
+    
+    // Also update the main results text with enhanced information
+    QString detailedResults = result.enhancedSummary;
+    
+    if (!result.enhancedMatches.isEmpty()) {
+        detailedResults += "\n\nTop 10 Highest Confidence Matches:\n";
+        detailedResults += "=====================================\n";
+        
+        // Sort matches by confidence
+        auto sortedMatches = result.enhancedMatches;
+        std::sort(sortedMatches.begin(), sortedMatches.end(),
+                  [](const EnhancedStarMatch& a, const EnhancedStarMatch& b) {
+                      return a.confidence > b.confidence;
+                  });
+        
+        int displayCount = std::min(10, (int)(sortedMatches.size()));
+        for (int i = 0; i < displayCount; ++i) {
+            const auto& match = sortedMatches[i];
+            detailedResults += QString("Match %1: Det[%2] ↔ Cat[%3]\n")
+                              .arg(i + 1).arg(match.detectedIndex).arg(match.catalogIndex);
+            detailedResults += QString("  Distance: %.2f px, Confidence: %.1f%%\n")
+                              .arg(match.pixelDistance).arg(match.confidence * 100.0);
+            
+            if (match.triangleError > 0) {
+                detailedResults += QString("  Triangle Error: %.3f\n").arg(match.triangleError);
+            }
+            
+            if (!match.supportingMatches.isEmpty()) {
+                detailedResults += QString("  Supporting Matches: %1\n")
+                                  .arg(match.supportingMatches.size());
+            }
+        }
+        
+        // Add distortion analysis if available
+        if (!result.radialDistortions.isEmpty()) {
+            double maxDistortion = *std::max_element(result.radialDistortions.begin(), 
+                                                    result.radialDistortions.end());
+            double avgDistortion = std::accumulate(result.radialDistortions.begin(),
+                                                  result.radialDistortions.end(), 0.0) 
+                                  / result.radialDistortions.size();
+            
+            detailedResults += QString("\nDistortion Analysis:\n");
+            detailedResults += QString("  Max Radial Distortion: %.3f pixels\n").arg(maxDistortion);
+            detailedResults += QString("  Average Distortion: %.3f pixels\n").arg(avgDistortion);
+        }
+    }
+    
+    m_resultsText->setPlainText(detailedResults);
+}
+
+void MainWindow::onShowMatchingDetails()
+{
+    if (!m_enhancedValidationComplete) {
+        QMessageBox::information(this, "Matching Details", 
+                                "Please perform enhanced validation first.");
+        return;
+    }
+    
+    // Create detailed analysis dialog
+    QDialog* detailsDialog = new QDialog(this);
+    detailsDialog->setWindowTitle("Enhanced Matching Details");
+    detailsDialog->resize(800, 600);
+    
+    QVBoxLayout* layout = new QVBoxLayout(detailsDialog);
+    
+    // Create tab widget for different analysis views
+    QTabWidget* tabWidget = new QTabWidget;
+    
+    // Statistics tab
+    QTextEdit* statsText = new QTextEdit;
+    statsText->setReadOnly(true);
+    statsText->setPlainText(m_lastEnhancedValidation.enhancedSummary);
+    tabWidget->addTab(statsText, "Statistics");
+    
+    // Matches table tab
+    QTableWidget* matchesTable = new QTableWidget;
+    matchesTable->setColumnCount(7);
+    matchesTable->setHorizontalHeaderLabels({
+        "Detected", "Catalog", "Distance (px)", "Confidence", 
+        "Triangle Error", "Geometric", "Photometric"
+    });
+    
+    matchesTable->setRowCount(m_lastEnhancedValidation.enhancedMatches.size());
+    
+    for (int i = 0; i < m_lastEnhancedValidation.enhancedMatches.size(); ++i) {
+        const auto& match = m_lastEnhancedValidation.enhancedMatches[i];
+        
+        matchesTable->setItem(i, 0, new QTableWidgetItem(QString::number(match.detectedIndex)));
+        matchesTable->setItem(i, 1, new QTableWidgetItem(QString::number(match.catalogIndex)));
+        matchesTable->setItem(i, 2, new QTableWidgetItem(QString::number(match.pixelDistance, 'f', 2)));
+        matchesTable->setItem(i, 3, new QTableWidgetItem(QString::number(match.confidence * 100, 'f', 1) + "%"));
+        matchesTable->setItem(i, 4, new QTableWidgetItem(QString::number(match.triangleError, 'f', 3)));
+        matchesTable->setItem(i, 5, new QTableWidgetItem(match.isGeometricallyValid ? "✓" : "✗"));
+        matchesTable->setItem(i, 6, new QTableWidgetItem(match.isPhotometricallyValid ? "✓" : "✗"));
+    }
+    
+    matchesTable->resizeColumnsToContents();
+    tabWidget->addTab(matchesTable, "Matches");
+    
+    // Triangle patterns tab (if available)
+    if (!m_lastEnhancedValidation.detectedTriangles.isEmpty()) {
+        QTextEdit* triangleText = new QTextEdit;
+        triangleText->setReadOnly(true);
+        
+        QString triangleInfo = QString("Triangle Pattern Analysis:\n\n");
+        triangleInfo += QString("Detected Triangles: %1\n").arg(m_lastEnhancedValidation.detectedTriangles.size());
+        triangleInfo += QString("Catalog Triangles: %1\n").arg(m_lastEnhancedValidation.catalogTriangles.size());
+        triangleInfo += QString("Triangle Matches: %1\n\n").arg(m_lastEnhancedValidation.triangleMatches.size());
+        
+        for (int i = 0; i < std::min(5, (int)(m_lastEnhancedValidation.detectedTriangles.size())); ++i) {
+            const auto& triangle = m_lastEnhancedValidation.detectedTriangles[i];
+            triangleInfo += QString("Triangle %1:\n").arg(i + 1);
+            triangleInfo += QString("  Stars: [%1, %2, %3]\n")
+                           .arg(triangle.starIndices[0])
+                           .arg(triangle.starIndices[1])
+                           .arg(triangle.starIndices[2]);
+            triangleInfo += QString("  Sides: %.1f, %.1f, %.1f px\n")
+                           .arg(triangle.side1).arg(triangle.side2).arg(triangle.side3);
+            triangleInfo += QString("  Area: %.1f px²\n").arg(triangle.area);
+            triangleInfo += QString("  Ratios: %.3f, %.3f, %.3f\n\n")
+                           .arg(triangle.ratio12).arg(triangle.ratio13).arg(triangle.ratio23);
+        }
+        
+        triangleText->setPlainText(triangleInfo);
+        tabWidget->addTab(triangleText, "Triangles");
+    }
+    
+    layout->addWidget(tabWidget);
+    
+    // Close button
+    QPushButton* closeButton = new QPushButton("Close");
+    connect(closeButton, &QPushButton::clicked, detailsDialog, &QDialog::accept);
+    layout->addWidget(closeButton);
+    
+    detailsDialog->exec();
+    delete detailsDialog;
+}
+
+void MainWindow::onVisualizeDistortions()
+{
+    if (!m_enhancedValidationComplete || m_lastEnhancedValidation.residualVectors.isEmpty()) {
+        QMessageBox::information(this, "Distortion Visualization", 
+                                "No distortion data available. Please perform enhanced validation first.");
+        return;
+    }
+    
+    // Create distortion visualization dialog
+    QDialog* distortionDialog = new QDialog(this);
+    distortionDialog->setWindowTitle("Optical Distortion Visualization");
+    distortionDialog->resize(600, 500);
+    
+    QVBoxLayout* layout = new QVBoxLayout(distortionDialog);
+    
+    // Create a simple text-based visualization for now
+    // In a full implementation, you would create a custom widget with graphical visualization
+    QTextEdit* distortionText = new QTextEdit;
+    distortionText->setReadOnly(true);
+    
+    QString distortionInfo = "Distortion Analysis Results:\n";
+    distortionInfo += "============================\n\n";
+    
+    if (!m_lastEnhancedValidation.radialDistortions.isEmpty()) {
+        double maxDist = *std::max_element(m_lastEnhancedValidation.radialDistortions.begin(),
+                                          m_lastEnhancedValidation.radialDistortions.end());
+        double minDist = *std::min_element(m_lastEnhancedValidation.radialDistortions.begin(),
+                                          m_lastEnhancedValidation.radialDistortions.end());
+        double avgDist = std::accumulate(m_lastEnhancedValidation.radialDistortions.begin(),
+                                        m_lastEnhancedValidation.radialDistortions.end(), 0.0) 
+                        / m_lastEnhancedValidation.radialDistortions.size();
+        
+        distortionInfo += QString("Radial Distortion Statistics:\n");
+        distortionInfo += QString("  Maximum: %.3f pixels\n").arg(maxDist);
+        distortionInfo += QString("  Minimum: %.3f pixels\n").arg(minDist);
+        distortionInfo += QString("  Average: %.3f pixels\n").arg(avgDist);
+        distortionInfo += QString("  RMS: %.3f pixels\n\n").arg(m_lastEnhancedValidation.geometricRMS);
+    }
+    
+    if (!m_lastEnhancedValidation.residualVectors.isEmpty()) {
+        distortionInfo += QString("Residual Vectors (first 10):\n");
+        distortionInfo += QString("Position → Residual\n");
+        distortionInfo += QString("===================\n");
+        
+        int count = std::min(10, (int)(m_lastEnhancedValidation.residualVectors.size()));
+        for (int i = 0; i < count; ++i) {
+            const QPointF& residual = m_lastEnhancedValidation.residualVectors[i];
+            const auto& match = m_lastEnhancedValidation.enhancedMatches[i];
+            
+            distortionInfo += QString("Star %1: (%.1f, %.1f) → (%.3f, %.3f)\n")
+                             .arg(match.detectedIndex)
+                             .arg(m_lastStarMask.starCenters[match.detectedIndex].x())
+                             .arg(m_lastStarMask.starCenters[match.detectedIndex].y())
+                             .arg(residual.x()).arg(residual.y());
+        }
+    }
+    
+    distortionText->setPlainText(distortionInfo);
+    layout->addWidget(distortionText);
+    
+    // Calibrate distortion model button
+    QPushButton* calibrateButton = new QPushButton("Calibrate Distortion Model");
+    calibrateButton->setToolTip("Calculate distortion correction parameters");
+    connect(calibrateButton, &QPushButton::clicked, this, &MainWindow::onCalibrateDistortionModel);
+    layout->addWidget(calibrateButton);
+    
+    QPushButton* closeButton = new QPushButton("Close");
+    connect(closeButton, &QPushButton::clicked, distortionDialog, &QDialog::accept);
+    layout->addWidget(closeButton);
+    
+    distortionDialog->exec();
+    delete distortionDialog;
+}
+
+void MainWindow::onCalibrateDistortionModel()
+{
+    if (!m_enhancedValidationComplete) {
+        QMessageBox::information(this, "Distortion Calibration", 
+                                "Please perform enhanced validation first.");
+        return;
+    }
+    
+    try {
+        bool success = m_catalogValidator->calibrateDistortionModel(m_lastEnhancedValidation);
+        
+        if (success) {
+            QMessageBox::information(this, "Distortion Calibration", 
+                                    "Distortion model calibrated successfully!\n\n"
+                                    "The model will be applied to future coordinate transformations.");
+        } else {
+            QMessageBox::warning(this, "Distortion Calibration", 
+                                "Failed to calibrate distortion model.\n\n"
+                                "Not enough high-quality matches or data is insufficient.");
+        }
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "Distortion Calibration Error", 
+                             QString("Error during calibration: %1").arg(e.what()));
+    }
+}
+
+void MainWindow::onExportMatchingResults()
+{
+    if (!m_enhancedValidationComplete) {
+        QMessageBox::information(this, "Export Results", 
+                                "Please perform enhanced validation first.");
+        return;
+    }
+    
+    QString fileName = QFileDialog::getSaveFileName(
+        this, "Export Enhanced Matching Results",
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/star_matching_results.json",
+        "JSON Files (*.json);;CSV Files (*.csv);;All Files (*)");
+    
+    if (fileName.isEmpty()) return;
+    
+    try {
+        QFileInfo fileInfo(fileName);
+        QString suffix = fileInfo.suffix().toLower();
+        
+        if (suffix == "json") {
+            // Export as JSON
+            QJsonObject exportData;
+            exportData["enhanced_summary"] = m_lastEnhancedValidation.enhancedSummary;
+            exportData["total_detected"] = m_lastEnhancedValidation.totalDetected;
+            exportData["total_catalog"] = m_lastEnhancedValidation.totalCatalog;
+            exportData["total_matches"] = m_lastEnhancedValidation.totalMatches;
+            exportData["matching_confidence"] = m_lastEnhancedValidation.matchingConfidence;
+            exportData["geometric_rms"] = m_lastEnhancedValidation.geometricRMS;
+            exportData["astrometric_accuracy"] = m_lastEnhancedValidation.astrometricAccuracy;
+            
+            // Add matches
+            QJsonArray matchesArray;
+            for (const auto& match : m_lastEnhancedValidation.enhancedMatches) {
+                QJsonObject matchObj;
+                matchObj["detected_index"] = match.detectedIndex;
+                matchObj["catalog_index"] = match.catalogIndex;
+                matchObj["pixel_distance"] = match.pixelDistance;
+                matchObj["confidence"] = match.confidence;
+                matchObj["triangle_error"] = match.triangleError;
+                matchObj["geometrically_valid"] = match.isGeometricallyValid;
+                matchObj["photometrically_valid"] = match.isPhotometricallyValid;
+                matchesArray.append(matchObj);
+            }
+	}
+    } catch (const std::exception& e) {
+        QString errorMsg = QString("Export Matching results: %1").arg(e.what());
+        m_statusLabel->setText(errorMsg);
+        QMessageBox::warning(this, "Eexport Matching results", errorMsg);
+    }
+}
 
 void MainWindow::setupStarDetectionControls()
 {
@@ -1405,6 +1970,18 @@ void MainWindow::updateStatusDisplay()
     
     m_statusLabel->setText(status);
 }
+
+void MainWindow::onMatchingParametersChanged()
+{
+
+}
+
+void MainWindow::updateEnhancedMatchingControls()
+{
+  
+}
+
+
 // Add this to MainWindow.cpp constructor or as a separate setup method
 
 /*
@@ -1550,3 +2127,4 @@ void MainWindow::compareCatalogPerformance()
     qDebug() << "📊 Local catalog is ~100x faster than network queries";
 }
 */
+
