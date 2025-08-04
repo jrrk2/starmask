@@ -69,6 +69,79 @@ target_include_directories(pcl_sha PUBLIC
     "${PCL_ROOT}/src/3rdparty"
 )
 
+# Create CMINPACK library from PCL sources
+message(STATUS "Setting up CMINPACK sources...")
+
+set(CMINPACK_DIR "${PCL_ROOT}/src/3rdparty/cminpack")
+set(CMINPACK_SOURCES
+    "${CMINPACK_DIR}/lmdif1.c"
+    "${CMINPACK_DIR}/lmdif.c"
+    "${CMINPACK_DIR}/lmpar.c"
+    "${CMINPACK_DIR}/qrfac.c"
+    "${CMINPACK_DIR}/qrsolv.c"
+    "${CMINPACK_DIR}/enorm.c"
+    "${CMINPACK_DIR}/dpmpar.c"
+    "${CMINPACK_DIR}/lmdif1_.c"
+    "${CMINPACK_DIR}/lmdif_.c"
+    "${CMINPACK_DIR}/lmpar_.c"
+    "${CMINPACK_DIR}/qrfac_.c"
+    "${CMINPACK_DIR}/qrsolv_.c"
+    "${CMINPACK_DIR}/enorm_.c"
+    "${CMINPACK_DIR}/dpmpar_.c"
+    "${CMINPACK_DIR}/fdjac1.c"
+    "${CMINPACK_DIR}/fdjac1_.c"
+    "${CMINPACK_DIR}/fdjac2.c"
+    "${CMINPACK_DIR}/fdjac2_.c"
+)
+
+# Check which CMINPACK sources exist
+set(AVAILABLE_CMINPACK_SOURCES)
+foreach(src_file ${CMINPACK_SOURCES})
+    if(EXISTS ${src_file})
+        list(APPEND AVAILABLE_CMINPACK_SOURCES ${src_file})
+        message(STATUS "Found CMINPACK source: ${src_file}")
+    else()
+        message(STATUS "CMINPACK source not found: ${src_file}")
+    endif()
+endforeach()
+
+if(AVAILABLE_CMINPACK_SOURCES)
+    message(STATUS "Creating CMINPACK library with ${CMAKE_CURRENT_LIST_LENGTH} sources")
+    
+    add_library(pcl_cminpack STATIC ${AVAILABLE_CMINPACK_SOURCES})
+    
+    set_target_properties(pcl_cminpack PROPERTIES
+        C_STANDARD 99
+        C_STANDARD_REQUIRED ON
+        POSITION_INDEPENDENT_CODE ON
+    )
+    
+    target_include_directories(pcl_cminpack PUBLIC
+        "${CMINPACK_DIR}"
+        "${PCL_ROOT}/src/3rdparty"
+    )
+    
+    # Compiler flags for CMINPACK
+    target_compile_options(pcl_cminpack PRIVATE
+        -O3 -g
+        -Wno-unused-parameter
+        -Wno-unused-variable
+        -Wno-unused-but-set-variable
+        -Wno-uninitialized
+    )
+    
+    # Define preprocessor macros for CMINPACK
+    target_compile_definitions(pcl_cminpack PRIVATE
+        __CMINPACK_NO_DLL__
+        CMINPACK_NO_DLL
+    )
+    
+    set(HAVE_CMINPACK TRUE)
+else()
+    message(WARNING "No CMINPACK sources found in ${CMINPACK_DIR}")
+    set(HAVE_CMINPACK FALSE)
+endif()
+
 # Add PCL Mock Library
 add_library(pcl_mock STATIC
     PCLMockAPI.cpp
@@ -133,7 +206,6 @@ set(SOURCES
     main.cpp
     MainWindow.cpp
     SimplifiedXISFWriter.cpp
-    SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
     StarMaskGenerator.cpp
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
@@ -180,6 +252,7 @@ target_include_directories(StarMaskDemo PRIVATE
     /opt/homebrew/Cellar/qt/6.9.0/lib/QtNetwork.framework/Versions/A/Headers
 )
 
+# Link libraries
 target_link_libraries(StarMaskDemo PRIVATE
     Qt6::Core
     Qt6::Widgets
@@ -195,6 +268,16 @@ target_link_libraries(StarMaskDemo PRIVATE
     ${CURL_LIBRARY}
     z
 )
+
+# Link CMINPACK if available
+if(HAVE_CMINPACK)
+    target_link_libraries(StarMaskDemo PRIVATE pcl_cminpack)
+    target_compile_definitions(StarMaskDemo PRIVATE HAVE_CMINPACK)
+    message(STATUS "CMINPACK support enabled - PSF fitting available")
+else()
+    target_compile_definitions(StarMaskDemo PRIVATE NO_CMINPACK)
+    message(STATUS "CMINPACK not available - PSF fitting disabled")
+endif()
 
 # Add CFITSIO if available
 if(CFITSIO_LIBRARY)
@@ -227,6 +310,7 @@ target_compile_options(StarMaskDemo PRIVATE
 message(STATUS "PCL Include Dirs: ${PCL_INCLUDE_DIRS}")
 message(STATUS "PCL Library: ${PCL_LIBRARY}")
 message(STATUS "Qt6 Version: ${Qt6_VERSION}")
+message(STATUS "CMINPACK Available: ${HAVE_CMINPACK}")
 
 # Install target
 install(TARGETS StarMaskDemo

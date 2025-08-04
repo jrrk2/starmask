@@ -21,13 +21,349 @@
 #include <QJsonDocument>
 #include "GaiaGDR3Catalog.h"
 #include <QTime>
-// Add these updates to your MainWindow.cpp
 
-// Update the includes at the top:
-#include "MainWindow.h"
-#include "ImageReader.h"
-#include "PCLMockAPI.h"
-#include "GaiaGDR3Catalog.h"  // Add this line
+void MainWindow::setupStarDetectionControls()
+{
+    m_starDetectionGroup = new QGroupBox("PCL Star Detection Controls");
+    m_starDetectionLayout = new QVBoxLayout(m_starDetectionGroup);
+    
+    // Sensitivity control
+    QHBoxLayout* sensitivityLayout = new QHBoxLayout;
+    sensitivityLayout->addWidget(new QLabel("Sensitivity:"));
+    m_sensitivitySlider = new QSlider(Qt::Horizontal);
+    m_sensitivitySlider->setRange(0, 100);
+    m_sensitivitySlider->setValue(50); // 0.5 default
+    m_sensitivitySlider->setToolTip("Star detection sensitivity (0=minimum, 100=maximum)");
+    QLabel* sensitivityValue = new QLabel("0.5");
+    sensitivityValue->setMinimumWidth(30);
+    connect(m_sensitivitySlider, &QSlider::valueChanged, [sensitivityValue](int value) {
+        sensitivityValue->setText(QString::number(value / 100.0, 'f', 2));
+    });
+    sensitivityLayout->addWidget(m_sensitivitySlider);
+    sensitivityLayout->addWidget(sensitivityValue);
+    m_starDetectionLayout->addLayout(sensitivityLayout);
+    
+    // Structure layers control
+    QHBoxLayout* structureLayout = new QHBoxLayout;
+    structureLayout->addWidget(new QLabel("Structure Layers:"));
+    m_structureLayersSpinBox = new QSpinBox;
+    m_structureLayersSpinBox->setRange(1, 8);
+    m_structureLayersSpinBox->setValue(5);
+    m_structureLayersSpinBox->setToolTip("Number of wavelet layers for structure detection (1=small stars, 8=large stars)");
+    structureLayout->addWidget(m_structureLayersSpinBox);
+    structureLayout->addStretch();
+    m_starDetectionLayout->addLayout(structureLayout);
+    
+    // Noise layers control
+    QHBoxLayout* noiseLayout = new QHBoxLayout;
+    noiseLayout->addWidget(new QLabel("Noise Layers:"));
+    m_noiseLayersSpinBox = new QSpinBox;
+    m_noiseLayersSpinBox->setRange(0, 4);
+    m_noiseLayersSpinBox->setValue(1);
+    m_noiseLayersSpinBox->setToolTip("Number of wavelet layers for noise reduction (0=none, 4=maximum)");
+    noiseLayout->addWidget(m_noiseLayersSpinBox);
+    noiseLayout->addStretch();
+    m_starDetectionLayout->addLayout(noiseLayout);
+    
+    // Peak response control
+    QHBoxLayout* peakLayout = new QHBoxLayout;
+    peakLayout->addWidget(new QLabel("Peak Response:"));
+    m_peakResponseSlider = new QSlider(Qt::Horizontal);
+    m_peakResponseSlider->setRange(0, 100);
+    m_peakResponseSlider->setValue(50); // 0.5 default
+    m_peakResponseSlider->setToolTip("Peak response sensitivity (0=sharp peaks only, 100=flat features allowed)");
+    QLabel* peakValue = new QLabel("0.5");
+    peakValue->setMinimumWidth(30);
+    connect(m_peakResponseSlider, &QSlider::valueChanged, [peakValue](int value) {
+        peakValue->setText(QString::number(value / 100.0, 'f', 2));
+    });
+    peakLayout->addWidget(m_peakResponseSlider);
+    peakLayout->addWidget(peakValue);
+    m_starDetectionLayout->addLayout(peakLayout);
+    
+    // Max distortion control
+    QHBoxLayout* distortionLayout = new QHBoxLayout;
+    distortionLayout->addWidget(new QLabel("Max Distortion:"));
+    m_maxDistortionSlider = new QSlider(Qt::Horizontal);
+    m_maxDistortionSlider->setRange(0, 100);
+    m_maxDistortionSlider->setValue(80); // 0.8 default
+    m_maxDistortionSlider->setToolTip("Maximum allowed star distortion (0=circular only, 100=any shape)");
+    QLabel* distortionValue = new QLabel("0.8");
+    distortionValue->setMinimumWidth(30);
+    connect(m_maxDistortionSlider, &QSlider::valueChanged, [distortionValue](int value) {
+        distortionValue->setText(QString::number(value / 100.0, 'f', 2));
+    });
+    distortionLayout->addWidget(m_maxDistortionSlider);
+    distortionLayout->addWidget(distortionValue);
+    m_starDetectionLayout->addLayout(distortionLayout);
+    
+    // PSF fitting control
+    m_enablePSFFittingCheck = new QCheckBox("Enable PSF Fitting");
+    m_enablePSFFittingCheck->setChecked(true);
+    m_enablePSFFittingCheck->setToolTip("Enable Point Spread Function fitting for better centroid accuracy");
+    m_starDetectionLayout->addWidget(m_enablePSFFittingCheck);
+    
+    // Detection buttons
+    QHBoxLayout* buttonLayout = new QHBoxLayout;
+    m_detectAdvancedButton = new QPushButton("Detect Stars (Advanced)");
+    m_detectAdvancedButton->setToolTip("Use PCL StarDetector with current parameters");
+    m_detectSimpleButton = new QPushButton("Detect Stars (Simple)");
+    m_detectSimpleButton->setToolTip("Use fallback simple detection algorithm");
+    
+    buttonLayout->addWidget(m_detectAdvancedButton);
+    buttonLayout->addWidget(m_detectSimpleButton);
+    m_starDetectionLayout->addLayout(buttonLayout);
+    
+    // Connect signals
+    connect(m_detectAdvancedButton, &QPushButton::clicked, this, &MainWindow::onDetectStarsAdvanced);
+    connect(m_detectSimpleButton, &QPushButton::clicked, this, &MainWindow::onDetectStarsSimple);
+    
+    // Initially disable until image is loaded
+    m_starDetectionGroup->setEnabled(false);
+}
+
+// Add this method to handle advanced star detection
+void MainWindow::onDetectStarsAdvanced()
+{
+    if (!m_imageReader->hasImage()) {
+        m_statusLabel->setText("No image loaded.");
+        return;
+    }
+
+    m_statusLabel->setText("Detecting stars with PCL StarDetector...");
+    QApplication::processEvents();
+
+    // Get parameters from UI controls
+    float sensitivity = m_sensitivitySlider->value() / 100.0f;
+    int structureLayers = m_structureLayersSpinBox->value();
+    int noiseLayers = m_noiseLayersSpinBox->value();
+    float peakResponse = m_peakResponseSlider->value() / 100.0f;
+    float maxDistortion = m_maxDistortionSlider->value() / 100.0f;
+    bool enablePSFFitting = m_enablePSFFittingCheck->isChecked();
+
+    qDebug() << "Starting advanced star detection with parameters:";
+    qDebug() << "  Sensitivity:" << sensitivity;
+    qDebug() << "  Structure layers:" << structureLayers;
+    qDebug() << "  Noise layers:" << noiseLayers;
+    qDebug() << "  Peak response:" << peakResponse;
+    qDebug() << "  Max distortion:" << maxDistortion;
+    qDebug() << "  PSF fitting:" << enablePSFFitting;
+
+    // Use our advanced StarMaskGenerator method
+    m_lastStarMask = StarMaskGenerator::detectStarsAdvanced(
+        m_imageReader->imageData(),
+        sensitivity,
+        structureLayers,
+        noiseLayers,
+        peakResponse,
+        maxDistortion,
+        enablePSFFitting
+    );
+
+    m_imageDisplayWidget->setStarOverlay(m_lastStarMask.starCenters, m_lastStarMask.starRadii);
+    m_starsDetected = !m_lastStarMask.starCenters.isEmpty();
+    
+    // Update status with detailed information
+    QString statusText = QString("PCL StarDetector: %1 stars detected").arg(m_lastStarMask.starCenters.size());
+    if (m_lastStarMask.starCenters.size() > 0) {
+        statusText += " - Use checkboxes to toggle display";
+        
+        // Add parameter summary to results text
+        QString paramSummary = QString("PCL StarDetector Parameters:\n"
+                                      "  Sensitivity: %1\n"
+                                      "  Structure Layers: %2\n"
+                                      "  Noise Layers: %3\n"
+                                      "  Peak Response: %4\n"
+                                      "  Max Distortion: %5\n"
+                                      "  PSF Fitting: %6\n\n"
+                                      "Results: %7 stars detected")
+                              .arg(sensitivity, 0, 'f', 2)
+                              .arg(structureLayers)
+                              .arg(noiseLayers)
+                              .arg(peakResponse, 0, 'f', 2)
+                              .arg(maxDistortion, 0, 'f', 2)
+                              .arg(enablePSFFitting ? "Enabled" : "Disabled")
+                              .arg(m_lastStarMask.starCenters.size());
+        
+        m_resultsText->setPlainText(paramSummary);
+    }
+    m_statusLabel->setText(statusText);
+    
+    updateValidationControls();
+}
+
+// Add this method to handle simple star detection
+void MainWindow::onDetectStarsSimple()
+{
+    if (!m_imageReader->hasImage()) {
+        m_statusLabel->setText("No image loaded.");
+        return;
+    }
+
+    m_statusLabel->setText("Detecting stars with simple algorithm...");
+    QApplication::processEvents();
+
+    // Use the basic detection method with sensitivity from slider
+    float sensitivity = m_sensitivitySlider->value() / 100.0f;
+    m_lastStarMask = StarMaskGenerator::detectStars(m_imageReader->imageData(), sensitivity);
+
+    m_imageDisplayWidget->setStarOverlay(m_lastStarMask.starCenters, m_lastStarMask.starRadii);
+    m_starsDetected = !m_lastStarMask.starCenters.isEmpty();
+    
+    // Update status
+    QString statusText = QString("Simple detection: %1 stars detected (sensitivity: %2)")
+                        .arg(m_lastStarMask.starCenters.size())
+                        .arg(sensitivity, 0, 'f', 2);
+    if (m_lastStarMask.starCenters.size() > 0) {
+        statusText += " - Use checkboxes to toggle display";
+        
+        QString resultsSummary = QString("Simple Star Detection:\n"
+                                       "  Sensitivity: %1\n"
+                                       "  Algorithm: Local maxima detection\n\n"
+                                       "Results: %2 stars detected")
+                               .arg(sensitivity, 0, 'f', 2)
+                               .arg(m_lastStarMask.starCenters.size());
+        
+        m_resultsText->setPlainText(resultsSummary);
+    }
+    m_statusLabel->setText(statusText);
+    
+    updateValidationControls();
+}
+
+// Update your existing setupUI() method to include the star detection controls
+void MainWindow::setupUI()
+{
+    m_centralWidget = new QWidget;
+    setCentralWidget(m_centralWidget);
+    
+    // Create main splitter
+    QSplitter* mainSplitter = new QSplitter(Qt::Horizontal);
+    
+    // Left side - image display
+    QWidget* leftWidget = new QWidget;
+    QVBoxLayout* leftLayout = new QVBoxLayout(leftWidget);
+    
+    m_imageDisplayWidget = new ImageDisplayWidget;
+    leftLayout->addWidget(m_imageDisplayWidget);
+    
+    // Button layout
+    m_buttonLayout = new QHBoxLayout;
+    m_loadButton = new QPushButton("Load Image");
+    m_validateButton = new QPushButton("Validate with Catalog");
+    m_plotCatalogButton = new QPushButton("Plot Catalog Stars");
+    
+    // Remove the old simple detect button since it's now in the controls
+    m_validateButton->setEnabled(false);
+    m_plotCatalogButton->setEnabled(false);
+    
+    m_buttonLayout->addWidget(m_loadButton);
+    m_buttonLayout->addWidget(m_validateButton);
+    m_buttonLayout->addWidget(m_plotCatalogButton);
+    m_buttonLayout->addStretch();
+    
+    leftLayout->addLayout(m_buttonLayout);
+    
+    // Mode toggle
+    QHBoxLayout* modeLayout = new QHBoxLayout;
+    m_plotModeCheck = new QCheckBox("Catalog Plotting Mode");
+    m_plotModeCheck->setToolTip("Switch between star detection/validation and direct catalog plotting");
+    modeLayout->addWidget(m_plotModeCheck);
+    modeLayout->addStretch();
+    leftLayout->addLayout(modeLayout);
+    
+    // Status label
+    m_statusLabel = new QLabel("Ready - Load an image to begin");
+    leftLayout->addWidget(m_statusLabel);
+    
+    // Right side - controls and results
+    QWidget* rightWidget = new QWidget;
+    rightWidget->setMaximumWidth(400); // Increased width for more controls
+    rightWidget->setMinimumWidth(350);
+    QVBoxLayout* rightLayout = new QVBoxLayout(rightWidget);
+    
+    // Add star detection controls
+    setupStarDetectionControls();
+    rightLayout->addWidget(m_starDetectionGroup);
+    
+    setupValidationControls();
+    setupCatalogPlottingControls();
+    
+    rightLayout->addWidget(m_validationGroup);
+    rightLayout->addWidget(m_plottingGroup);
+    
+    // Results display
+    QGroupBox* resultsGroup = new QGroupBox("Results");
+    QVBoxLayout* resultsLayout = new QVBoxLayout(resultsGroup);
+    
+    m_resultsText = new QTextEdit;
+    m_resultsText->setMaximumHeight(200);
+    m_resultsText->setReadOnly(true);
+    m_resultsText->setPlainText("No results yet.\n\nLoad an image with WCS information and either:\n- Detect stars for validation, or\n- Plot catalog stars directly");
+    
+    resultsLayout->addWidget(m_resultsText);
+    rightLayout->addWidget(resultsGroup);
+    
+    rightLayout->addStretch();
+    
+    // Add widgets to splitter
+    mainSplitter->addWidget(leftWidget);
+    mainSplitter->addWidget(rightWidget);
+    mainSplitter->setStretchFactor(0, 1); // Image display gets most space
+    mainSplitter->setStretchFactor(1, 0); // Controls panel fixed width
+    
+    // Main layout
+    m_mainLayout = new QVBoxLayout(m_centralWidget);
+    m_mainLayout->addWidget(mainSplitter);
+}
+
+// Update your onLoadImage method to enable star detection controls
+void MainWindow::onLoadImage()
+{
+    pcl_mock::InitializeMockAPI();
+    
+    QString filePath = QFileDialog::getOpenFileName(
+        this,
+        "Open Image File",
+        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
+        ImageReader::formatFilter()
+    );
+    
+    if (filePath.isEmpty())
+        return;
+
+    if (!m_imageReader->readFile(filePath)) {
+        m_statusLabel->setText("Failed to load image: " + m_imageReader->lastError());
+        QMessageBox::warning(this, "Load Error", m_imageReader->lastError());
+        return;
+    }
+
+    // Store pointer to image data
+    m_imageData = &m_imageReader->imageData();
+    
+    m_imageDisplayWidget->setImageData(m_imageReader->imageData());
+    m_statusLabel->setText("Image loaded successfully - Choose detection method");
+    
+    // Extract WCS information
+    extractWCSFromImage();
+    
+    // Update UI state
+    m_starDetectionGroup->setEnabled(true);  // Enable star detection controls
+    m_plotCatalogButton->setEnabled(m_hasWCS);
+    m_starsDetected = false;
+    m_catalogQueried = false;
+    m_validationComplete = false;
+    m_catalogPlotted = false;
+    
+    updateValidationControls();
+    updatePlottingControls();
+    updateStatusDisplay();
+    
+    // Clear previous results
+    m_imageDisplayWidget->clearStarOverlay();
+    m_imageDisplayWidget->clearValidationResults();
+    m_resultsText->clear();
+}
 
 // Replace the setup2MASSCatalog method with setupGaiaDR3Catalog:
 void MainWindow::setupGaiaDR3Catalog()
@@ -561,7 +897,6 @@ MainWindow::MainWindow(QWidget* parent)
     
     // Connect image reader signals
     connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
-    connect(m_detectButton, &QPushButton::clicked, this, &MainWindow::onDetectStars);
     connect(m_validateButton, &QPushButton::clicked, this, &MainWindow::onValidateStars);
     connect(m_plotCatalogButton, &QPushButton::clicked, this, &MainWindow::onPlotCatalogStars);
     
@@ -614,90 +949,6 @@ MainWindow::MainWindow(QWidget* parent)
     
     updateValidationControls();
     updatePlottingControls();
-}
-
-void MainWindow::setupUI()
-{
-    m_centralWidget = new QWidget;
-    setCentralWidget(m_centralWidget);
-    
-    // Create main splitter
-    QSplitter* mainSplitter = new QSplitter(Qt::Horizontal);
-    
-    // Left side - image display
-    QWidget* leftWidget = new QWidget;
-    QVBoxLayout* leftLayout = new QVBoxLayout(leftWidget);
-    
-    m_imageDisplayWidget = new ImageDisplayWidget;
-    leftLayout->addWidget(m_imageDisplayWidget);
-    
-    // Button layout
-    m_buttonLayout = new QHBoxLayout;
-    m_loadButton = new QPushButton("Load Image");
-    m_detectButton = new QPushButton("Detect Stars");
-    m_validateButton = new QPushButton("Validate with Catalog");
-    m_plotCatalogButton = new QPushButton("Plot Catalog Stars");
-    
-    m_detectButton->setEnabled(false);
-    m_validateButton->setEnabled(false);
-    m_plotCatalogButton->setEnabled(false);
-    
-    m_buttonLayout->addWidget(m_loadButton);
-    m_buttonLayout->addWidget(m_detectButton);
-    m_buttonLayout->addWidget(m_validateButton);
-    m_buttonLayout->addWidget(m_plotCatalogButton);
-    
-    m_buttonLayout->addStretch();
-    
-    leftLayout->addLayout(m_buttonLayout);
-    
-    // Mode toggle
-    QHBoxLayout* modeLayout = new QHBoxLayout;
-    m_plotModeCheck = new QCheckBox("Catalog Plotting Mode");
-    m_plotModeCheck->setToolTip("Switch between star detection/validation and direct catalog plotting");
-    modeLayout->addWidget(m_plotModeCheck);
-    modeLayout->addStretch();
-    leftLayout->addLayout(modeLayout);
-    
-    // Status label
-    m_statusLabel = new QLabel("Ready - Load an image to begin");
-    leftLayout->addWidget(m_statusLabel);
-    
-    // Right side - controls and results
-    QWidget* rightWidget = new QWidget;
-    rightWidget->setMaximumWidth(350);
-    rightWidget->setMinimumWidth(300);
-    QVBoxLayout* rightLayout = new QVBoxLayout(rightWidget);
-    
-    setupValidationControls();
-    setupCatalogPlottingControls();
-    
-    rightLayout->addWidget(m_validationGroup);
-    rightLayout->addWidget(m_plottingGroup);
-    
-    // Results display
-    QGroupBox* resultsGroup = new QGroupBox("Results");
-    QVBoxLayout* resultsLayout = new QVBoxLayout(resultsGroup);
-    
-    m_resultsText = new QTextEdit;
-    m_resultsText->setMaximumHeight(200);
-    m_resultsText->setReadOnly(true);
-    m_resultsText->setPlainText("No results yet.\n\nLoad an image with WCS information and either:\n- Detect stars for validation, or\n- Plot catalog stars directly");
-    
-    resultsLayout->addWidget(m_resultsText);
-    rightLayout->addWidget(resultsGroup);
-    
-    rightLayout->addStretch();
-    
-    // Add widgets to splitter
-    mainSplitter->addWidget(leftWidget);
-    mainSplitter->addWidget(rightWidget);
-    mainSplitter->setStretchFactor(0, 1); // Image display gets most space
-    mainSplitter->setStretchFactor(1, 0); // Controls panel fixed width
-    
-    // Main layout
-    m_mainLayout = new QVBoxLayout(m_centralWidget);
-    m_mainLayout->addWidget(mainSplitter);
 }
 
 void MainWindow::setupValidationControls()
@@ -780,53 +1031,6 @@ void MainWindow::setupCatalogPlottingControls()
     m_plottingGroup->setVisible(false);
 }
 
-void MainWindow::onLoadImage()
-{
-    pcl_mock::InitializeMockAPI();
-    
-    QString filePath = QFileDialog::getOpenFileName(
-        this,
-        "Open Image File",
-        QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation),
-        ImageReader::formatFilter()
-    );
-    
-    if (filePath.isEmpty())
-        return;
-
-    if (!m_imageReader->readFile(filePath)) {
-        m_statusLabel->setText("Failed to load image: " + m_imageReader->lastError());
-        QMessageBox::warning(this, "Load Error", m_imageReader->lastError());
-        return;
-    }
-
-    // Store pointer to image data
-    m_imageData = &m_imageReader->imageData();
-    
-    m_imageDisplayWidget->setImageData(m_imageReader->imageData());
-    m_statusLabel->setText("Image loaded successfully");
-    
-    // Extract WCS information
-    extractWCSFromImage();
-    
-    // Update UI state
-    m_detectButton->setEnabled(true);
-    m_plotCatalogButton->setEnabled(m_hasWCS);
-    m_starsDetected = false;
-    m_catalogQueried = false;
-    m_validationComplete = false;
-    m_catalogPlotted = false;
-    
-    updateValidationControls();
-    updatePlottingControls();
-    updateStatusDisplay();
-    
-    // Clear previous results
-    m_imageDisplayWidget->clearStarOverlay();
-    m_imageDisplayWidget->clearValidationResults();
-    m_resultsText->clear();
-}
-
 void MainWindow::onPlotCatalogStars()
 {
     if (!m_hasWCS) {
@@ -883,11 +1087,9 @@ void MainWindow::onPlotModeToggled(bool plotMode)
     
     // Update button states
     if (plotMode) {
-        m_detectButton->setVisible(false);
         m_validateButton->setVisible(false);
         m_plotCatalogButton->setVisible(true);
     } else {
-        m_detectButton->setVisible(true);
         m_validateButton->setVisible(true);
         m_plotCatalogButton->setVisible(false);
     }
@@ -1153,13 +1355,11 @@ void MainWindow::updateValidationControls()
     if (m_plotMode) {
         // In plot mode, disable validation controls
         m_validateButton->setEnabled(false);
-        m_detectButton->setEnabled(false);
         return;
     }
     
     bool canValidate = m_starsDetected && m_hasWCS;
     m_validateButton->setEnabled(canValidate && !m_queryProgressBar->isVisible());
-    m_detectButton->setEnabled(m_imageData != nullptr);
     
     // Update tooltip
     if (!m_hasWCS) {

@@ -69,6 +69,9 @@ private:
     void compareCatalogPerformance();
     void browseGaiaCatalogFile();
     void testGaiaPerformance();
+    void onDetectStarsAdvanced();
+    void onDetectStarsSimple();
+    void setupStarDetectionControls();
   
     // UI Components
     QWidget* m_centralWidget;
@@ -78,7 +81,6 @@ private:
     
     // Image controls
     QPushButton* m_loadButton;
-    QPushButton* m_detectButton;
     QPushButton* m_validateButton;
     QPushButton* m_plotCatalogButton;     // NEW: Plot catalog button
     
@@ -121,6 +123,19 @@ private:
     bool m_validationComplete;
     bool m_plotMode;                      // NEW: Plot mode flag
     bool m_catalogPlotted;                // NEW: Catalog plotted flag
+
+    // Star detection controls
+    QGroupBox* m_starDetectionGroup;
+    QVBoxLayout* m_starDetectionLayout;
+    QSlider* m_sensitivitySlider;
+    QSpinBox* m_structureLayersSpinBox;
+    QSpinBox* m_noiseLayersSpinBox;
+    QSlider* m_peakResponseSlider;
+    QSlider* m_maxDistortionSlider;
+    QCheckBox* m_enablePSFFittingCheck;
+    QPushButton* m_detectAdvancedButton;
+    QPushButton* m_detectSimpleButton;
+  
 };
 
 #endif // MAINWINDOW_H
