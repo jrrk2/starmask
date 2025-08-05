@@ -205,6 +205,7 @@ set(SOURCES
     ImageStatistics.cpp
     main.cpp
     MainWindow.cpp
+    PixelMatchingDebugger.cpp
     StarCatalogValidator.cpp
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
@@ -225,6 +226,7 @@ set(HEADERS
     ImageReader.h
     ImageStatistics.h
     MainWindow.h
+    PixelMatchingDebugger.h
     SimplifiedXISFWriter.h
     StarCatalogValidator.h
     StarMaskGenerator.h

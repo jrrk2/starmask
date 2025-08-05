@@ -2238,6 +2238,25 @@ void MainWindow::onPlotCatalogStars()
     plotCatalogStarsDirectly();
 }
 
+static void dumpcat(QVector<CatalogStar> &catalogStars)
+{
+        for (const auto& star : catalogStars) {
+	      QString id;             // Star identifier (e.g., HD123456, HIP67890)
+	      double ra = 0.0;        // Right ascension (degrees)
+	      double dec = 0.0;       // Declination (degrees)
+	      double magnitude = 0.0; // Visual magnitude
+	      QString spectralType;   // Spectral type (if available)
+	      QPointF pixelPos;       // Calculated pixel position
+
+                qDebug() << QString("Star %1: pos=(%2,%3) magnitude=%4")
+		  .arg(star.id)
+		  .arg(star.pixelPos.x(), 0, 'f', 1)
+		  .arg(star.pixelPos.y(), 0, 'f', 1)
+		  .arg(star.magnitude, 0, 'f', 1);
+            }
+
+}
+
 void MainWindow::plotCatalogStarsDirectly()
 {
     if (!m_catalogQueried) {
@@ -2249,29 +2268,29 @@ void MainWindow::plotCatalogStarsDirectly()
         m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
         
         m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, fieldRadius);
-    } else {
-        // Catalog already queried, just display it
-        QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
-        
-        // Create a validation result just for display purposes
-        ValidationResult plotResult;
-        plotResult.catalogStars = catalogStars;
-        plotResult.totalCatalog = catalogStars.size();
-        plotResult.isValid = true;
-        plotResult.summary = QString("Catalog Plot:\n%1 stars plotted (magnitude ≤ %.1f)\nSource: %2")
-                            .arg(catalogStars.size())
-	                    .arg(m_plotMagnitudeSpin->value());
-        
-        m_imageDisplayWidget->setValidationResults(plotResult);
-        m_resultsText->setPlainText(plotResult.summary);
-        
-        m_catalogPlotted = true;
-        m_statusLabel->setText(QString("Plotted %1 catalog stars (mag ≤ %.1f)")
-                              .arg(catalogStars.size())
-                              .arg(m_plotMagnitudeSpin->value()));
-        
-        updatePlottingControls();
     }
+
+    // Catalog already queried, just display it
+    QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+    dumpcat(catalogStars);
+    // Create a validation result just for display purposes
+    ValidationResult plotResult;
+    plotResult.catalogStars = catalogStars;
+    plotResult.totalCatalog = catalogStars.size();
+    plotResult.isValid = true;
+    plotResult.summary = QString("Catalog Plot:\n%1 stars plotted (magnitude ≤ %.1f)\nSource: %2")
+			.arg(catalogStars.size())
+			.arg(m_plotMagnitudeSpin->value());
+
+    m_imageDisplayWidget->setValidationResults(plotResult);
+    m_resultsText->setPlainText(plotResult.summary);
+
+    m_catalogPlotted = true;
+    m_statusLabel->setText(QString("Plotted %1 catalog stars (mag ≤ %.1f)")
+			  .arg(catalogStars.size())
+			  .arg(m_plotMagnitudeSpin->value()));
+
+    updatePlottingControls();
 }
 
 void MainWindow::onPlotModeToggled(bool plotMode)

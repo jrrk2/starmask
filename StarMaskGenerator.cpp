@@ -147,7 +147,7 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
             }
 
             // Debug output for first few stars
-            if (result.starCenters.size() <= 5) {
+            if (result.starCenters.size() <= 500) {
                 qDebug() << QString("Star %1: pos=(%2,%3) flux=%4 area=%5 radius=%6 SNR=%7")
                             .arg(result.starCenters.size())
                             .arg(star.pos.x, 0, 'f', 1)

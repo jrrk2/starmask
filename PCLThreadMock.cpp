@@ -49,7 +49,7 @@ static std::mutex g_thread_mutex;
 
 // Helper function to log a thread function call
 static void LogThreadCall(const char* function, void* thread_handle) {
-    std::cout << "PCL Thread: " << function << " called with handle=" << thread_handle << std::endl;
+  //    std::cout << "PCL Thread: " << function << " called with handle=" << thread_handle << std::endl;
 }
 
 // Get thread data by handle
@@ -97,7 +97,7 @@ static void* thread_wrapper(void* arg) {
 
 // Mock for CreateThread
 void* CreateThread(void* module_handle, void* thread_object, int flags) {
-    LogThreadCall("CreateThread", thread_object);
+  //    LogThreadCall("CreateThread", thread_object);
     
     // Create thread data structure
     ThreadData* data = new ThreadData();

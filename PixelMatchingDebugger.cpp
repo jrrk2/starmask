@@ -75,7 +75,7 @@ void PixelMatchingDebugger::identifyProblematicMatches()
     if (shouldMatchButDont > 0) {
         qDebug() << "\n🔍 PRIMARY ISSUE IDENTIFIED:";
         qDebug() << QString("  %1 stars appear to match visually but fail mathematical criteria").arg(shouldMatchButDont);
-        qDebug__ << "  This suggests either:";
+        qDebug() << "  This suggests either:";
         qDebug() << "    • Pixel tolerance too strict for image quality";
         qDebug() << "    • Magnitude difference criteria too restrictive";
         qDebug() << "    • Systematic coordinate offset not accounted for";
@@ -293,7 +293,7 @@ void PixelMatchingDebugger::findNearestCatalogStar(const QPoint& detectedPos, in
     qDebug() << QString("Found %1 catalog stars within %2 px:")
                 .arg(nearbyStars.size()).arg(searchRadius);
     
-    for (int i = 0; i < std::min(10, nearbyStars.size()); ++i) {
+    for (int i = 0; i < std::min(10, (int)(nearbyStars.size())); ++i) {
         const auto& star = nearbyStars[i];
         qDebug() << QString("  %1. %2: (%.1f, %.1f) dist=%.2f px, mag=%.1f")
                     .arg(i + 1).arg(star.catalogId)
@@ -303,7 +303,7 @@ void PixelMatchingDebugger::findNearestCatalogStar(const QPoint& detectedPos, in
     
     if (nearbyStars.isEmpty()) {
         qDebug() << QString("  No catalog stars found within %1 px").arg(searchRadius);
-        qDebug__ << "  Try increasing search radius or check coordinate transformations";
+        qDebug() << "  Try increasing search radius or check coordinate transformations";
     } else if (nearbyStars.size() == 1) {
         qDebug() << "  Single nearest star found - good candidate for matching";
     } else {
@@ -348,3 +348,414 @@ void PixelMatchingDebugger::listAllMatchesInRadius(const QPoint& center, double 
         }
     }
 }
+
+// Add these to your existing PixelMatchingDebugger.cpp file
+
+#include "PixelMatchingDebugger.h"
+#include <QDebug>
+#include <QFile>
+#include <QTextStream>
+#include <QDateTime>
+#include <algorithm>
+#include <numeric>
+#include <cmath>
+
+PixelMatchingDebugger::PixelMatchingDebugger(QObject* parent) : QObject(parent)
+{
+    qDebug() << "PixelMatchingDebugger initialized";
+}
+
+void PixelMatchingDebugger::diagnoseMatching(const QVector<QPoint>& detectedStars,
+                                           const QVector<CatalogStar>& catalogStars,
+                                           const ValidationResult& result,
+                                           const StarCatalogValidator* validator)
+{
+    qDebug() << "=== PIXEL MATCHING DIAGNOSIS ===";
+    
+    // Store data for analysis
+    m_detectedStars = detectedStars;
+    m_catalogStars = catalogStars;
+    m_result = result;
+    m_validator = validator;
+    
+    // Clear previous diagnostics
+    m_diagnostics.clear();
+    
+    // Create diagnostics for all potential matches
+    for (int i = 0; i < detectedStars.size(); ++i) {
+        QPoint detectedPos = detectedStars[i];
+        
+        // Find closest catalog star
+        double closestDistance = 1000.0;
+        int closestCatalogIndex = -1;
+        
+        for (int j = 0; j < catalogStars.size(); ++j) {
+            if (!catalogStars[j].isValid) continue;
+            
+            double distance = sqrt(pow(detectedPos.x() - catalogStars[j].pixelPos.x(), 2) +
+                                 pow(detectedPos.y() - catalogStars[j].pixelPos.y(), 2));
+            
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestCatalogIndex = j;
+            }
+        }
+        
+        if (closestCatalogIndex >= 0 && closestDistance <= 20.0) { // Within search radius
+            MatchDiagnostic diag;
+            diag.detectedIndex = i;
+            diag.catalogIndex = closestCatalogIndex;
+            diag.detectedPos = detectedPos;
+            diag.catalogPos = catalogStars[closestCatalogIndex].pixelPos;
+            diag.catalogId = catalogStars[closestCatalogIndex].id;
+            diag.magnitude = catalogStars[closestCatalogIndex].magnitude;
+            diag.pixelDistance = closestDistance;
+            diag.magnitudeDiff = 0.0; // Would need detected star magnitude to calculate
+            
+            // Check criteria
+            diag.passesDistanceCheck = (closestDistance <= m_currentPixelTolerance);
+            diag.passesMagnitudeCheck = true; // Default to true without magnitude data
+            
+            // Check if this match appears in the results
+            bool foundInResults = false;
+            for (const auto& match : result.matches) {
+                if (match.detectedIndex == i && match.catalogIndex == closestCatalogIndex) {
+                    diag.passesOverallCheck = match.isGoodMatch;
+                    diag.magnitudeDiff = match.magnitudeDiff;
+                    diag.passesMagnitudeCheck = (match.magnitudeDiff <= m_currentMagnitudeTolerance);
+                    foundInResults = true;
+                    break;
+                }
+            }
+            
+            if (!foundInResults) {
+                diag.passesOverallCheck = false;
+                diag.failureReasons.append("Not found in results");
+            }
+            
+            // Assess if this should visually match
+            diag.shouldVisuallyMatch = (closestDistance <= 8.0); // Visual assessment
+            
+            // Add failure reasons
+            if (!diag.passesDistanceCheck) {
+                diag.failureReasons.append(QString("Distance %.2f > tolerance %.1f")
+                                         .arg(closestDistance).arg(m_currentPixelTolerance));
+            }
+            if (!diag.passesMagnitudeCheck) {
+                diag.failureReasons.append(QString("MagDiff %.2f > tolerance %.1f")
+                                         .arg(diag.magnitudeDiff).arg(m_currentMagnitudeTolerance));
+            }
+            
+            m_diagnostics.append(diag);
+        }
+    }
+    
+    qDebug() << QString("Created %1 match diagnostics").arg(m_diagnostics.size());
+    
+    // Run analysis
+    calculateAllDistances();
+    identifyProblematicMatches();
+    checkForSystematicBias();
+    analyzeMatchingQuality();
+}
+
+void PixelMatchingDebugger::analyzeDistanceCriteria(double pixelTolerance)
+{
+    if (m_diagnostics.isEmpty()) {
+        qDebug() << "No diagnostic data available for distance analysis";
+        return;
+    }
+    
+    qDebug() << QString("=== DISTANCE CRITERIA ANALYSIS (tolerance: %.1f px) ===").arg(pixelTolerance);
+    
+    QVector<double> distances;
+    int withinTolerance = 0;
+    int passingValidation = 0;
+    int shouldMatchButDont = 0;
+    
+    for (const auto& diag : m_diagnostics) {
+        distances.append(diag.pixelDistance);
+        
+        if (diag.pixelDistance <= pixelTolerance) {
+            withinTolerance++;
+        }
+        
+        if (diag.passesOverallCheck) {
+            passingValidation++;
+        }
+        
+        if (diag.pixelDistance <= pixelTolerance && !diag.passesOverallCheck) {
+            shouldMatchButDont++;
+        }
+    }
+    
+    if (!distances.isEmpty()) {
+        std::sort(distances.begin(), distances.end());
+        double medianDistance = distances[distances.size() / 2];
+        double q25 = distances[distances.size() / 4];
+        double q75 = distances[distances.size() * 3 / 4];
+        double avgDistance = std::accumulate(distances.begin(), distances.end(), 0.0) / distances.size();
+        
+        qDebug() << QString("Distance statistics:");
+        qDebug() << QString("  Median: %.2f px, Average: %.2f px").arg(medianDistance).arg(avgDistance);
+        qDebug() << QString("  Q25: %.2f px, Q75: %.2f px").arg(q25).arg(q75);
+        qDebug() << QString("  Range: %.2f - %.2f px").arg(distances.first()).arg(distances.last());
+        
+        qDebug() << QString("Criteria efficiency:");
+        qDebug() << QString("  Within tolerance: %1/%2 (%.1f%%)")
+                    .arg(withinTolerance).arg(distances.size())
+                    .arg(100.0 * withinTolerance / distances.size());
+        qDebug() << QString("  Passing validation: %1/%2 (%.1f%%)")
+                    .arg(passingValidation).arg(distances.size())
+                    .arg(100.0 * passingValidation / distances.size());
+        qDebug() << QString("  Should match but don't: %1").arg(shouldMatchButDont);
+        
+        if (shouldMatchButDont > 0) {
+            qDebug() << QString("🔍 ISSUE: %1 stars within distance tolerance but failing validation")
+                        .arg(shouldMatchButDont);
+            qDebug() << "   Likely causes: magnitude criteria, additional validation logic";
+        }
+        
+        // Suggest optimal tolerance
+        if (medianDistance * 2.0 < pixelTolerance) {
+            qDebug() << QString("💡 SUGGESTION: Current tolerance (%.1f) may be too loose. Try %.1f px")
+                        .arg(pixelTolerance).arg(medianDistance * 1.5);
+        } else if (medianDistance > pixelTolerance) {
+            qDebug() << QString("💡 SUGGESTION: Current tolerance (%.1f) may be too strict. Try %.1f px")
+                        .arg(pixelTolerance).arg(medianDistance * 1.2);
+        }
+    }
+}
+
+void PixelMatchingDebugger::findMissedMatches(double searchRadius)
+{
+    qDebug() << QString("=== FINDING MISSED MATCHES (search radius: %.1f px) ===").arg(searchRadius);
+    
+    int missedCount = 0;
+    int visualMisses = 0;
+    
+    for (const auto& diag : m_diagnostics) {
+        if (diag.pixelDistance <= searchRadius && !diag.passesOverallCheck) {
+            missedCount++;
+            
+            if (diag.shouldVisuallyMatch) {
+                visualMisses++;
+                
+                if (visualMisses <= 5) { // Show first 5 cases
+                    qDebug() << QString("  Visual miss %1: det[%2] -> cat[%3] %4")
+                                .arg(visualMisses).arg(diag.detectedIndex)
+                                .arg(diag.catalogIndex).arg(diag.catalogId);
+                    qDebug() << QString("    Distance: %.2f px, Reasons: %5")
+                                .arg(diag.pixelDistance).arg(diag.failureReasons.join("; "));
+                }
+            }
+        }
+    }
+    
+    qDebug() << QString("Found %1 missed matches within %.1f px radius")
+                .arg(missedCount).arg(searchRadius);
+    qDebug() << QString("Of these, %1 should match visually").arg(visualMisses);
+    
+    if (visualMisses > 0) {
+        qDebug() << "🎯 ACTION NEEDED: Investigate why visually matching stars fail validation";
+    }
+}
+
+void PixelMatchingDebugger::testToleranceRange(double minPixelTol, double maxPixelTol, double step)
+{
+    qDebug() << QString("\n=== TESTING TOLERANCE RANGE %.1f - %.1f px (step %.1f) ===")
+                .arg(minPixelTol).arg(maxPixelTol).arg(step);
+    
+    if (m_diagnostics.isEmpty()) {
+        qDebug() << "No diagnostic data available for tolerance testing";
+        return;
+    }
+    
+    struct ToleranceResult {
+        double tolerance;
+        int matchCount;
+        int potentialMatches;
+        double efficiency;
+    };
+    
+    QVector<ToleranceResult> results;
+    
+    for (double tol = minPixelTol; tol <= maxPixelTol; tol += step) {
+        ToleranceResult result;
+        result.tolerance = tol;
+        result.matchCount = 0;
+        result.potentialMatches = 0;
+        
+        for (const auto& diag : m_diagnostics) {
+            if (diag.pixelDistance <= tol) {
+                result.potentialMatches++;
+                // Simulate validation with this tolerance
+                bool wouldPass = (diag.pixelDistance <= tol) && 
+                               diag.passesMagnitudeCheck && 
+                               !diag.failureReasons.contains("Not found in results");
+                if (wouldPass) {
+                    result.matchCount++;
+                }
+            }
+        }
+        
+        result.efficiency = result.potentialMatches > 0 ? 
+                          (double)result.matchCount / result.potentialMatches : 0.0;
+        
+        results.append(result);
+        
+        qDebug() << QString("  Tolerance %.1f px: %1 matches/%2 potential (%.1f%% efficiency)")
+                    .arg(tol).arg(result.matchCount).arg(result.potentialMatches)
+                    .arg(result.efficiency * 100.0);
+    }
+    
+    // Find optimal tolerance
+    if (!results.isEmpty()) {
+        auto optimalIt = std::max_element(results.begin(), results.end(),
+            [](const ToleranceResult& a, const ToleranceResult& b) {
+                // Optimize for balance of match count and efficiency
+                double scoreA = a.matchCount * a.efficiency;
+                double scoreB = b.matchCount * b.efficiency;
+                return scoreA < scoreB;
+            });
+        
+        qDebug() << QString("💡 OPTIMAL TOLERANCE: %.1f px (%1 matches, %.1f%% efficiency)")
+                    .arg(optimalIt->tolerance).arg(optimalIt->matchCount)
+                    .arg(optimalIt->efficiency * 100.0);
+    }
+}
+
+
+void PixelMatchingDebugger::printSummaryReport()
+{
+    qDebug() << "\n=== PIXEL MATCHING DEBUG SUMMARY ===";
+    
+    if (m_diagnostics.isEmpty()) {
+        qDebug() << "No diagnostic data available";
+        return;
+    }
+    
+    MatchingStats stats = calculateStats();
+    
+    qDebug() << QString("Summary Statistics:");
+    qDebug() << QString("  Detected stars: %1").arg(stats.totalDetected);
+    qDebug() << QString("  Catalog stars: %1").arg(stats.totalCatalog);
+    qDebug() << QString("  Potential matches (within search): %1").arg(stats.potentialMatches);
+    qDebug() << QString("  Distance-passing matches: %1").arg(stats.distancePassingMatches);
+    qDebug() << QString("  Actual matches: %1").arg(stats.actualMatches);
+    
+    if (stats.potentialMatches > 0) {
+        double efficiency = (double)stats.actualMatches / stats.potentialMatches * 100.0;
+        qDebug() << QString("  Overall efficiency: %.1f%%").arg(efficiency);
+    }
+    
+    qDebug() << QString("Distance Analysis:");
+    qDebug() << QString("  Average distance: %.3f px").arg(stats.avgDistance);
+    qDebug() << QString("  Median distance: %.3f px").arg(stats.medianDistance);
+    qDebug() << QString("  Maximum distance: %.3f px").arg(stats.maxDistance);
+    
+    qDebug() << QString("Systematic Offset:");
+    qDebug() << QString("  dx=%.3f px, dy=%.3f px").arg(stats.systematicOffset.x()).arg(stats.systematicOffset.y());
+    double offsetMagnitude = sqrt(pow(stats.systematicOffset.x(), 2) + pow(stats.systematicOffset.y(), 2));
+    qDebug() << QString("  Offset magnitude: %.3f px").arg(offsetMagnitude);
+    
+    if (offsetMagnitude > 2.0) {
+        qDebug() << "⚠️  LARGE SYSTEMATIC OFFSET - Check WCS calibration";
+    } else if (offsetMagnitude > 1.0) {
+        qDebug() << "⚠️  Moderate systematic offset - Consider recalibration";
+    } else {
+        qDebug() << "✅ Systematic offset within acceptable range";
+    }
+    
+    // Count problematic cases
+    int visualMismatches = 0;
+    int closeButFailing = 0;
+    
+    for (const auto& diag : m_diagnostics) {
+        if (diag.shouldVisuallyMatch && !diag.passesOverallCheck) {
+            visualMismatches++;
+        }
+        if (diag.pixelDistance <= m_currentPixelTolerance && !diag.passesOverallCheck) {
+            closeButFailing++;
+        }
+    }
+    
+    qDebug() << QString("Problem Identification:");
+    qDebug() << QString("  Visual mismatches: %1").arg(visualMismatches);
+    qDebug() << QString("  Close but failing: %1").arg(closeButFailing);
+    
+    if (visualMismatches > 0 || closeButFailing > 0) {
+        qDebug() << "\
+🔍 PRIMARY ISSUES DETECTED:";
+        if (visualMismatches > 0) {
+            qDebug() << QString("  • %1 stars that should match visually are failing validation").arg(visualMismatches);
+        }
+        if (closeButFailing > 0) {
+            qDebug() << QString("  • %1 stars within pixel tolerance are failing validation").arg(closeButFailing);
+        }
+        qDebug() << "\
+💡 RECOMMENDED ACTIONS:";
+        qDebug() << "  1. Check magnitude difference criteria";
+        qDebug() << "  2. Review additional validation logic";
+        qDebug() << "  3. Consider increasing pixel tolerance";
+        qDebug() << "  4. Verify coordinate transformations";
+    } else {
+        qDebug() << "✅ No major matching issues detected";
+    }
+}
+
+PixelMatchingDebugger::MatchingStats PixelMatchingDebugger::calculateStats()
+{
+    MatchingStats stats;
+    
+    if (m_diagnostics.isEmpty()) {
+        return stats;
+    }
+    
+    stats.totalDetected = m_detectedStars.size();
+    stats.totalCatalog = m_catalogStars.size();
+    stats.potentialMatches = m_diagnostics.size();
+    
+    QVector<double> distances;
+    double sumDx = 0, sumDy = 0;
+    int offsetCount = 0;
+    
+    for (const auto& diag : m_diagnostics) {
+        distances.append(diag.pixelDistance);
+        
+        if (diag.passesDistanceCheck) {
+            stats.distancePassingMatches++;
+        }
+        if (diag.passesMagnitudeCheck) {
+            stats.magnitudePassingMatches++;
+        }
+        if (diag.passesOverallCheck) {
+            stats.actualMatches++;
+        }
+        
+        // Calculate systematic offset
+        sumDx += diag.detectedPos.x() - diag.catalogPos.x();
+        sumDy += diag.detectedPos.y() - diag.catalogPos.y();
+        offsetCount++;
+    }
+    
+    if (!distances.isEmpty()) {
+        stats.avgDistance = std::accumulate(distances.begin(), distances.end(), 0.0) / distances.size();
+        stats.maxDistance = *std::max_element(distances.begin(), distances.end());
+        
+        std::sort(distances.begin(), distances.end());
+        stats.medianDistance = distances[distances.size() / 2];
+    }
+    
+    if (offsetCount > 0) {
+        stats.systematicOffset = QPointF(sumDx / offsetCount, sumDy / offsetCount);
+    }
+    
+    return stats;
+}
+
+void PixelMatchingDebugger::checkForSystematicBias()
+{
+
+}
+
