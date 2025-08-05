@@ -229,6 +229,7 @@ set(HEADERS
     PixelMatchingDebugger.h
     SimplifiedXISFWriter.h
     StarCatalogValidator.h
+    StarCorrelator.h
     StarMaskGenerator.h
     structuredefinitions.h
     PCLMockAPI.h

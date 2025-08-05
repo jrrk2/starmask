@@ -1,4 +1,5 @@
 #include "StarMaskGenerator.h"
+#include "StarCorrelator.h"
 #include "PCLMockAPI.h"
 
 #include <pcl/Image.h>
@@ -9,6 +10,27 @@
 #include <cmath>
 #include <QDebug>
 
+StarCorrelator correlator;
+
+void StarMaskGenerator::validateStarDetection() {
+    
+    // Run analysis
+    correlator.correlateStars();
+    correlator.printDetailedStatistics();
+    correlator.printMatchDetails();
+    correlator.analyzePhotometricAccuracy();
+    correlator.exportMatches("star_matches.csv");
+    
+    // Get results for your UI
+    int matchCount = correlator.getMatchCount();
+    double avgError = correlator.getAverageError();
+    double matchRate = correlator.getMatchRate();
+    
+    qDebug() << "Validation complete:" << matchCount << "matches," 
+             << QString::number(avgError, 'f', 2) << "px avg error,"
+             << QString::number(matchRate, 'f', 1) << "% match rate";
+}
+
 StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float threshold)
 {
     StarMaskResult result;
@@ -18,6 +40,12 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
         return result;
     }
 
+    // Configure Validator
+    correlator.setImageDimensions(imageData.width, imageData.height);
+    correlator.setMatchThreshold(2.0);
+    correlator.setZeroPoint(25.0);
+    correlator.setAutoCalibrate(true);
+    
     try {
         // Initialize PCL Mock API
         pcl_mock::InitializeMockAPI();
@@ -146,18 +174,14 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
                 }
             }
 
-            // Debug output for first few stars
-            if (result.starCenters.size() <= 500) {
-                qDebug() << QString("Star %1: pos=(%2,%3) flux=%4 area=%5 radius=%6 SNR=%7")
-                            .arg(result.starCenters.size())
-                            .arg(star.pos.x, 0, 'f', 1)
-                            .arg(star.pos.y, 0, 'f', 1)
-                            .arg(star.flux, 0, 'f', 1)
-                            .arg(star.area, 0, 'f', 1)
-                            .arg(starRadius, 0, 'f', 1)
-                            .arg((star.flux - 0) / std::max(1.0f, star.mad), 0, 'f', 1); // Rough SNR estimate
+	    correlator.addDetectedStar(result.starCenters.size(),
+				       star.pos.x,
+				       star.pos.y,
+				       star.flux,
+				       star.area,
+				       starRadius,
+				       ((star.flux - 0) / std::max(1.0f, star.mad))); // Rough SNR estimate
             }
-        }
 
         // Report automatically calculated minimum star size if available
         if (detector.MinStarSize() > 0) {
@@ -191,6 +215,17 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
     }
 
     return result;
+}
+
+void StarMaskGenerator::dumpcat(QVector<CatalogStar> &catalogStars)
+{
+  for (const auto& star : catalogStars) {
+    correlator.addCatalogStar(star.id,
+			      star.pixelPos.x(),
+			      star.pixelPos.y(),
+			      star.magnitude);
+  }
+  validateStarDetection();
 }
 
 // Fallback simple star detection (your original algorithm)

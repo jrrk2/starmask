@@ -302,7 +302,7 @@ public:
     void setCatalogSource(CatalogSource source);
     void setValidationMode(ValidationMode mode);
     void setMatchingTolerance(double pixelTolerance, double magnitudeTolerance = 2.0);
-    void setMagnitudeLimit(double faintestMagnitude);
+  //    void setMagnitudeLimit(double faintestMagnitude);
     
     // WCS handling
     bool setWCSData(const WCSData& wcs);
@@ -375,7 +375,7 @@ private:
     ValidationMode m_validationMode;
     double m_pixelTolerance;
     double m_magnitudeTolerance;
-    double m_magnitudeLimit;
+  //    double m_magnitudeLimit;
     
     // Data
     WCSData m_wcsData;

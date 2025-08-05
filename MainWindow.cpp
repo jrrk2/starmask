@@ -28,10 +28,14 @@ void MainWindow::setupDebuggingMenu()
     QMenuBar* menuBar = this->menuBar();
     QMenu* debugMenu = menuBar->addMenu("&Debug");
     
+    QAction* debugStarCorrelation = debugMenu->addAction("Debug Star Correlation");
+    debugStarCorrelation->setToolTip("Matching stars correlation");
+    connect(debugStarCorrelation, &QAction::triggered, this, &MainWindow::onDebugStarCorrelation);
+    /*        
     QAction* debugPixelAction = debugMenu->addAction("Debug Pixel Matching");
     debugPixelAction->setToolTip("Analyze why visually matching stars fail mathematical criteria");
     connect(debugPixelAction, &QAction::triggered, this, &MainWindow::onDebugPixelMatching);
-    
+
     QAction* analyzeCriteriaAction = debugMenu->addAction("Analyze Matching Criteria");
     analyzeCriteriaAction->setToolTip("Deep analysis of distance and magnitude criteria");
     connect(analyzeCriteriaAction, &QAction::triggered, this, &MainWindow::onAnalyzeMatchingCriteria);
@@ -39,7 +43,7 @@ void MainWindow::setupDebuggingMenu()
     QAction* testSensitivityAction = debugMenu->addAction("Test Parameter Sensitivity");
     testSensitivityAction->setToolTip("Test different tolerance values to find optimal settings");
     connect(testSensitivityAction, &QAction::triggered, this, &MainWindow::onTestParameterSensitivity);
-    
+    */    
     debugMenu->addSeparator();
     
     QAction* exportDebugAction = debugMenu->addAction("Export Debug Report");
@@ -66,7 +70,7 @@ void MainWindow::setupDebuggingMenu()
     connect(testDebugAction, &QAction::triggered, this, &MainWindow::testPixelMatchingDebug);
     
 }
-
+/*
 void MainWindow::onDebugPixelMatching()
 {
     if (!m_starsDetected) {
@@ -97,274 +101,7 @@ void MainWindow::onDebugPixelMatching()
     // Show results in a dialog
     showPixelDebugDialog();
 }
-
-void MainWindow::onAnalyzeMatchingCriteria()
-{
-    if (!m_pixelDebugger) {
-        QMessageBox::information(this, "Analyze Criteria", 
-            "Please run pixel matching debug first.");
-        return;
-    }
-    
-    qDebug() << "\n🔍 ANALYZING MATCHING CRITERIA";
-    
-    // Get current tolerances from UI
-    double pixelTolerance = m_pixelToleranceSpin->value();
-    double magnitudeTolerance = 2.0; // You might want to expose this in UI
-    
-    // Run detailed criteria analysis
-    m_pixelDebugger->analyzeDistanceCriteria(pixelTolerance);
-    
-    // Find missed matches
-    m_pixelDebugger->findMissedMatches(pixelTolerance * 2.0);
-    
-    // Update results display
-    QString analysisResults = QString(
-        "Matching Criteria Analysis Complete\n"
-        "====================================\n"
-        "Current pixel tolerance: %1 px\n"
-        "Current magnitude tolerance: %2\n\n"
-        "Check debug console for detailed analysis.\n\n"
-        "Key Issues to Look For:\n"
-        "• Stars within tolerance but marked as bad matches\n"  
-        "• Large systematic coordinate offsets\n"
-        "• Many 'visual matches' that fail mathematically\n"
-        "• Suboptimal tolerance values\n\n"
-        "Suggested Actions:\n"
-        "1. Check WCS calibration if systematic offset > 1px\n"
-        "2. Adjust pixel tolerance if many close matches fail\n"
-        "3. Review magnitude estimation if mag differences large\n"
-        "4. Consider distortion correction for edge effects")
-        .arg(pixelTolerance).arg(magnitudeTolerance);
-    
-    m_resultsText->setPlainText(analysisResults);
-}
-
-void MainWindow::onTestParameterSensitivity()
-{
-    if (!m_pixelDebugger) {
-        QMessageBox::information(this, "Parameter Sensitivity", 
-            "Please run pixel matching debug first.");
-        return;
-    }
-    
-    qDebug() << "\n🔍 TESTING PARAMETER SENSITIVITY";
-    
-    // Test pixel tolerance range
-    double currentPixelTol = m_pixelToleranceSpin->value();
-    double minTol = std::max(1.0, currentPixelTol * 0.5);
-    double maxTol = currentPixelTol * 3.0;
-    
-    m_pixelDebugger->testToleranceRange(minTol, maxTol, 0.5);
-    
-    // Test magnitude tolerance range (if implemented)
-    // m_pixelDebugger->testMagnitudeRange(0.5, 5.0, 0.5);
-    
-    QString sensitivityResults = QString(
-        "Parameter Sensitivity Analysis Complete\n"
-        "=======================================\n"
-        "Tested pixel tolerance range: %.1f - %.1f px\n"
-        "Current setting: %.1f px\n\n"
-        "Check debug console for detailed results.\n\n"
-        "Look for:\n"
-        "• Optimal tolerance value (best efficiency)\n"
-        "• Sharp drop-offs in match count\n"
-        "• Diminishing returns at high tolerances\n\n"
-        "The optimal tolerance balances:\n"
-        "• High match count (captures true matches)\n"
-        "• Good efficiency (avoids false matches)\n"
-        "• Reasonable for your image quality")
-        .arg(minTol).arg(maxTol).arg(currentPixelTol);
-    
-    m_resultsText->setPlainText(sensitivityResults);
-}
-
-void MainWindow::showPixelDebugDialog()
-{
-    QDialog* debugDialog = new QDialog(this);
-    debugDialog->setWindowTitle("Pixel Matching Debug Results");
-    debugDialog->resize(800, 600);
-    
-    QVBoxLayout* layout = new QVBoxLayout(debugDialog);
-    
-    // Create tab widget for different views
-    QTabWidget* tabWidget = new QTabWidget;
-    
-    // Summary tab
-    QTextEdit* summaryText = new QTextEdit;
-    summaryText->setReadOnly(true);
-    summaryText->setFont(QFont("Consolas", 10)); // Monospace for alignment
-    
-    // Capture debug output (you might need to implement a way to capture qDebug output)
-    QString summaryContent = QString(
-        "PIXEL MATCHING DEBUG SUMMARY\n"
-        "============================\n\n"
-        "This analysis helps diagnose why stars that appear to match visually\n"
-        "are not meeting the mathematical matching criteria.\n\n"
-        "Key Metrics:\n"
-        "• Distance distribution of potential matches\n"
-        "• Systematic coordinate offsets (bias)\n"
-        "• Efficiency of current tolerance settings\n"
-        "• Identification of 'missed' matches\n\n"
-        "Check the Debug Console (View -> Application Output) for detailed results.\n\n"
-        "Common Issues and Solutions:\n"
-        "==========================\n\n"
-        "1. SYSTEMATIC OFFSET (dx/dy bias > 1px):\n"
-        "   → WCS calibration problem\n"
-        "   → Check CRPIX1/CRPIX2 values\n"
-        "   → Verify coordinate system (J2000 vs current epoch)\n\n"
-        "2. LARGE DISTANCE SCATTER:\n"
-        "   → Distortion not modeled\n"
-        "   → Non-linear coordinate transformation needed\n"
-        "   → Check for systematic rotation error\n\n"
-        "3. MANY VISUAL MATCHES FAIL CRITERIA:\n"
-        "   → Pixel tolerance too strict\n"
-        "   → Magnitude estimation problems\n"
-        "   → Other validation criteria too restrictive\n\n"
-        "4. LOW OVERALL EFFICIENCY:\n"
-        "   → Mixed issues (offset + scatter + criteria)\n"
-        "   → Need comprehensive recalibration\n\n"
-        "Next Steps:\n"
-        "==========\n"
-        "1. Use 'Analyze Matching Criteria' for detailed breakdown\n"
-        "2. Use 'Test Parameter Sensitivity' to find optimal tolerances\n"
-        "3. Check WCS calibration if systematic bias detected\n"
-        "4. Consider implementing distortion correction\n"
-        "5. Export debug report for detailed analysis");
-    
-    summaryText->setPlainText(summaryContent);
-    tabWidget->addTab(summaryText, "Summary");
-    
-    // Quick fixes tab
-    QWidget* fixesWidget = new QWidget;
-    QVBoxLayout* fixesLayout = new QVBoxLayout(fixesWidget);
-    
-    QLabel* fixesTitle = new QLabel("Quick Fix Suggestions");
-    fixesTitle->setFont(QFont("Arial", 12, QFont::Bold));
-    fixesLayout->addWidget(fixesTitle);
-    
-    // Tolerance adjustment
-    QGroupBox* toleranceGroup = new QGroupBox("Tolerance Adjustments");
-    QGridLayout* toleranceLayout = new QGridLayout(toleranceGroup);
-    
-    QLabel* currentPixelLabel = new QLabel(QString("Current pixel tolerance: %1 px")
-                                          .arg(m_pixelToleranceSpin->value()));
-    toleranceLayout->addWidget(currentPixelLabel, 0, 0, 1, 2);
-    
-    QPushButton* increaseToleranceBtn = new QPushButton("Increase to 7.0 px");
-    connect(increaseToleranceBtn, &QPushButton::clicked, [this]() {
-        m_pixelToleranceSpin->setValue(7);
-        QMessageBox::information(this, "Tolerance Updated", 
-            "Pixel tolerance increased to 7.0 px. Re-run validation to see effect.");
-    });
-    toleranceLayout->addWidget(increaseToleranceBtn, 1, 0);
-    
-    QPushButton* relaxToleranceBtn = new QPushButton("Relax to 10.0 px");
-    connect(relaxToleranceBtn, &QPushButton::clicked, [this]() {
-        m_pixelToleranceSpin->setValue(10);
-        QMessageBox::information(this, "Tolerance Updated", 
-            "Pixel tolerance relaxed to 10.0 px. Re-run validation to see effect.");
-    });
-    toleranceLayout->addWidget(relaxToleranceBtn, 1, 1);
-    
-    fixesLayout->addWidget(toleranceGroup);
-    
-    // WCS debugging
-    QGroupBox* wcsGroup = new QGroupBox("WCS Debugging");
-    QVBoxLayout* wcsLayout = new QVBoxLayout(wcsGroup);
-    
-    QPushButton* showWCSBtn = new QPushButton("Show WCS Information");
-    connect(showWCSBtn, &QPushButton::clicked, [this]() {
-        showWCSDebugInfo();
-    });
-    wcsLayout->addWidget(showWCSBtn);
-    
-    QPushButton* testWCSBtn = new QPushButton("Test WCS Transformations");
-    connect(testWCSBtn, &QPushButton::clicked, [this]() {
-        testWCSTransformations();
-    });
-    wcsLayout->addWidget(testWCSBtn);
-    
-    fixesLayout->addWidget(wcsGroup);
-    
-    // Re-run validation with debug
-    QGroupBox* rerunGroup = new QGroupBox("Re-run with Enhanced Debug");
-    QVBoxLayout* rerunLayout = new QVBoxLayout(rerunGroup);
-    
-    QPushButton* rerunBtn = new QPushButton("Re-run Validation with Verbose Debug");
-    connect(rerunBtn, &QPushButton::clicked, [this, debugDialog]() {
-        debugDialog->accept();
-        rerunValidationWithDebug();
-    });
-    rerunLayout->addWidget(rerunBtn);
-    
-    fixesLayout->addWidget(rerunGroup);
-    
-    fixesLayout->addStretch();
-    tabWidget->addTab(fixesWidget, "Quick Fixes");
-    
-    // Advanced diagnostics tab
-    QTextEdit* advancedText = new QTextEdit;
-    advancedText->setReadOnly(true);
-    advancedText->setFont(QFont("Consolas", 9));
-    
-    QString advancedContent = QString(
-        "ADVANCED DIAGNOSTICS\n"
-        "===================\n\n"
-        "For detailed analysis, enable these debug options:\n\n"
-        "1. ENABLE ENHANCED MATCHING DEBUG:\n"
-        "   - Shows triangle pattern matching\n"
-        "   - Geometric validation details\n"
-        "   - Distortion analysis\n\n"
-        "2. WCS TRANSFORMATION TESTS:\n"
-        "   - Round-trip coordinate accuracy\n"
-        "   - Known star position verification\n"
-        "   - Grid-based systematic error detection\n\n"
-        "3. STATISTICAL ANALYSIS:\n"
-        "   - Error distribution analysis\n"
-        "   - Outlier detection\n"
-        "   - Correlation analysis\n\n"
-        "Debug Console Commands:\n"
-        "======================\n"
-        "Watch for these key diagnostic messages:\n\n"
-        "• 'Systematic offset: dx=X.X, dy=Y.Y px'\n"
-        "  → Values > 1.0 indicate WCS calibration issues\n\n"
-        "• 'Visual mismatches: N'\n"
-        "  → Stars that should match but don't meet criteria\n\n"
-        "• 'Distance distribution: median=X.X px'\n"
-        "  → Compare to your tolerance setting\n\n"
-        "• 'Efficiency: XX%%'\n"
-        "  → Percentage of potential matches that succeed\n\n"
-        "Parameter Optimization:\n"
-        "======================\n"
-        "Optimal pixel tolerance typically:\n"
-        "• 1.5-3.0 px for well-calibrated systems\n"
-        "• 3.0-7.0 px for moderately calibrated systems\n"
-        "• 7.0-15.0 px for rough calibrations\n\n"
-        "If you need >15 px tolerance, there are likely\n"
-        "fundamental WCS or coordinate system issues.\n\n"
-        "Common Pixel Tolerance Issues:\n"
-        "=============================\n"
-        "• Too strict (< 2px): Misses valid matches due to noise\n"
-        "• Too loose (> 10px): Accepts false matches\n"
-        "• Optimal range: 3-7px for most astronomical images\n\n"
-        "Export the debug report for spreadsheet analysis\n"
-        "of individual star positions and matching criteria.");
-    
-    advancedText->setPlainText(advancedContent);
-    tabWidget->addTab(advancedText, "Advanced");
-    
-    layout->addWidget(tabWidget);
-    
-    // Close button
-    QPushButton* closeButton = new QPushButton("Close");
-    connect(closeButton, &QPushButton::clicked, debugDialog, &QDialog::accept);
-    layout->addWidget(closeButton);
-    
-    debugDialog->exec();
-    delete debugDialog;
-}
-
+*/
 void MainWindow::showWCSDebugInfo()
 {
     if (!m_hasWCS) {
@@ -519,78 +256,6 @@ void MainWindow::testWCSTransformations()
              maxError < 5.0 ? "Acceptable" : "Poor");
     
     QMessageBox::information(this, "WCS Transformation Test", testResults);
-}
-
-void MainWindow::rerunValidationWithDebug()
-{
-    if (!m_starsDetected || !m_catalogQueried) {
-        QMessageBox::information(this, "Re-run Validation", 
-            "Please detect stars and query catalog first.");
-        return;
-    }
-    
-    qDebug() << "\n🔍 RE-RUNNING VALIDATION WITH ENHANCED DEBUG";
-    
-    // Store original settings
-    int originalPixelTol = m_pixelToleranceSpin->value();
-    
-    m_statusLabel->setText("Re-running validation with debug...");
-    QApplication::processEvents();
-    
-    try {
-        // Enable verbose debugging in the catalog validator
-        // You might need to add a debug mode to StarCatalogValidator
-        
-        // Perform validation
-        ValidationResult result = m_catalogValidator->validateStars(m_lastStarMask.starCenters, 
-                                                                   m_lastStarMask.starRadii);
-        
-        if (result.isValid) {
-            m_lastValidation = result;
-            m_validationComplete = true;
-            
-            // Update display
-            m_imageDisplayWidget->setValidationResults(result);
-            
-            // Run debug analysis immediately
-            m_pixelDebugger->diagnoseMatching(
-                m_lastStarMask.starCenters,
-                m_catalogValidator->getCatalogStars(),
-                result,
-                m_catalogValidator.get()
-            );
-            
-            // Add debug info to results
-            QString debugSummary = QString(
-                "VALIDATION WITH DEBUG COMPLETE\n"
-                "==============================\n\n"
-                "%1\n\n"
-                "DEBUG ANALYSIS:\n"
-                "Check debug console for detailed pixel matching analysis.\n"
-                "Key metrics have been calculated for:\n"
-                "• Distance distributions\n"
-                "• Systematic coordinate offsets\n"
-                "• Parameter sensitivity\n"
-                "• Missed match identification\n\n"
-                "Use the Debug menu for interactive analysis tools.")
-                .arg(result.summary);
-            
-            m_resultsText->setPlainText(debugSummary);
-            
-            m_statusLabel->setText(QString("Debug validation complete: %1/%2 stars matched")
-                                  .arg(result.totalMatches).arg(result.totalDetected));
-            
-        } else {
-            QMessageBox::warning(this, "Validation Error", "Debug validation failed.");
-        }
-        
-    } catch (const std::exception& e) {
-        QString errorMsg = QString("Debug validation error: %1").arg(e.what());
-        m_statusLabel->setText(errorMsg);
-        QMessageBox::warning(this, "Debug Validation Error", errorMsg);
-    }
-    
-    updateValidationControls();
 }
 
 // Add this method to export detailed debug information
@@ -769,7 +434,7 @@ void MainWindow::setupEnhancedMatchingControls()
     
     QPushButton* validateEnhancedButton = new QPushButton("Validate (Enhanced)");
     validateEnhancedButton->setToolTip("Perform enhanced star validation using PixInsight methods");
-    connect(validateEnhancedButton, &QPushButton::clicked, this, &MainWindow::onValidateStarsEnhanced);
+    connect(validateEnhancedButton, &QPushButton::clicked, this, &MainWindow::onValidateStars);
     buttonLayout->addWidget(validateEnhancedButton);
     
     QPushButton* showDetailsButton = new QPushButton("Show Details");
@@ -821,10 +486,10 @@ void MainWindow::setupEnhancedMatchingControls()
             this, &MainWindow::onMatchingParametersChanged);
     
     // Initially hide enhanced matching controls (show when needed)
-    m_enhancedMatchingGroup->setVisible(false);
+    m_enhancedMatchingGroup->setVisible(true);
 }
 
-void MainWindow::onValidateStarsEnhanced()
+void MainWindow::onValidateStars()
 {
     if (!m_starsDetected) {
         QMessageBox::information(this, "Enhanced Validation", "Please detect stars first.");
@@ -1439,15 +1104,12 @@ void MainWindow::setupUI()
     // Button layout
     m_buttonLayout = new QHBoxLayout;
     m_loadButton = new QPushButton("Load Image");
-    m_validateButton = new QPushButton("Validate with Catalog");
     m_plotCatalogButton = new QPushButton("Plot Catalog Stars");
     
     // Remove the old simple detect button since it's now in the controls
-    m_validateButton->setEnabled(false);
     m_plotCatalogButton->setEnabled(false);
     
     m_buttonLayout->addWidget(m_loadButton);
-    m_buttonLayout->addWidget(m_validateButton);
     m_buttonLayout->addWidget(m_plotCatalogButton);
     m_buttonLayout->addStretch();
     
@@ -1475,11 +1137,12 @@ void MainWindow::setupUI()
     setupStarDetectionControls();
     rightLayout->addWidget(m_starDetectionGroup);
     
-    setupValidationControls();
     setupCatalogPlottingControls();
     
-    rightLayout->addWidget(m_validationGroup);
     rightLayout->addWidget(m_plottingGroup);
+
+    setupEnhancedMatchingControls();
+    mainSplitter->addWidget(m_enhancedMatchingGroup);
     
     // Results display
     QGroupBox* resultsGroup = new QGroupBox("Results");
@@ -2094,7 +1757,6 @@ MainWindow::MainWindow(QWidget* parent)
     
     // Connect image reader signals
     connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
-    connect(m_validateButton, &QPushButton::clicked, this, &MainWindow::onValidateStars);
     connect(m_plotCatalogButton, &QPushButton::clicked, this, &MainWindow::onPlotCatalogStars);
     
     // Connect mode control
@@ -2103,19 +1765,6 @@ MainWindow::MainWindow(QWidget* parent)
     // Connect validation control signals
     connect(m_validationModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onValidationModeChanged);
-    connect(m_magnitudeLimitSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &MainWindow::onMagnitudeLimitChanged);
-    connect(m_pixelToleranceSpin, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &MainWindow::onPixelToleranceChanged);
-    
-    // Connect plotting control signals
-    connect(m_plotMagnitudeSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-            [this](double value) {
-                m_catalogValidator->setMagnitudeLimit(value);
-                m_catalogQueried = false;
-                m_catalogPlotted = false;
-                updatePlottingControls();
-            });
     connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [this](double) {
                 m_catalogQueried = false;
@@ -2148,59 +1797,11 @@ MainWindow::MainWindow(QWidget* parent)
     updatePlottingControls();
 }
 
-void MainWindow::setupValidationControls()
-{
-    m_validationGroup = new QGroupBox("Star Detection & Validation (Gaia GDR3)");
-    m_validationLayout = new QVBoxLayout(m_validationGroup);
-        
-    // Validation mode
-    QHBoxLayout* modeLayout = new QHBoxLayout;
-    modeLayout->addWidget(new QLabel("Validation Mode:"));
-    m_validationModeCombo = new QComboBox;
-    m_validationModeCombo->addItem("Strict", static_cast<int>(StarCatalogValidator::Strict));
-    m_validationModeCombo->addItem("Normal", static_cast<int>(StarCatalogValidator::Normal));
-    m_validationModeCombo->addItem("Loose", static_cast<int>(StarCatalogValidator::Loose));
-    m_validationModeCombo->setCurrentIndex(1); // Default to Normal
-    modeLayout->addWidget(m_validationModeCombo);
-    m_validationLayout->addLayout(modeLayout);
-    
-    // Magnitude limit
-    QHBoxLayout* magLayout = new QHBoxLayout;
-    magLayout->addWidget(new QLabel("Magnitude Limit:"));
-    m_magnitudeLimitSpin = new QSpinBox;
-    m_magnitudeLimitSpin->setRange(6, 20);
-    m_magnitudeLimitSpin->setValue(12);
-    m_magnitudeLimitSpin->setSuffix(" mag");
-    magLayout->addWidget(m_magnitudeLimitSpin);
-    m_validationLayout->addLayout(magLayout);
-    
-    // Pixel tolerance
-    QHBoxLayout* pixelLayout = new QHBoxLayout;
-    pixelLayout->addWidget(new QLabel("Pixel Tolerance:"));
-    m_pixelToleranceSpin = new QSpinBox;
-    m_pixelToleranceSpin->setRange(1, 20);
-    m_pixelToleranceSpin->setValue(5);
-    m_pixelToleranceSpin->setSuffix(" px");
-    pixelLayout->addWidget(m_pixelToleranceSpin);
-    m_validationLayout->addLayout(pixelLayout);
-    
-    // Progress bar for catalog queries
-    m_queryProgressBar = new QProgressBar;
-    m_queryProgressBar->setVisible(false);
-    m_validationLayout->addWidget(m_queryProgressBar);
-    
-    // WCS status
-    QLabel* wcsStatusLabel = new QLabel("WCS Status: Not available (Required for Gaia queries)");
-    wcsStatusLabel->setObjectName("wcsStatusLabel");
-    wcsStatusLabel->setStyleSheet("QLabel { color: red; font-weight: bold; }");
-    m_validationLayout->addWidget(wcsStatusLabel);
-}
-
 void MainWindow::setupCatalogPlottingControls()
 {
     m_plottingGroup = new QGroupBox("Catalog Plotting");
     m_plottingLayout = new QVBoxLayout(m_plottingGroup);
-    
+    /*    
     // Magnitude limit for plotting
     QHBoxLayout* plotMagLayout = new QHBoxLayout;
     plotMagLayout->addWidget(new QLabel("Magnitude Limit:"));
@@ -2211,7 +1812,7 @@ void MainWindow::setupCatalogPlottingControls()
     m_plotMagnitudeSpin->setSuffix(" mag");
     plotMagLayout->addWidget(m_plotMagnitudeSpin);
     m_plottingLayout->addLayout(plotMagLayout);
-    
+    */
     // Field radius
     QHBoxLayout* radiusLayout = new QHBoxLayout;
     radiusLayout->addWidget(new QLabel("Field Radius:"));
@@ -2238,23 +1839,14 @@ void MainWindow::onPlotCatalogStars()
     plotCatalogStarsDirectly();
 }
 
-static void dumpcat(QVector<CatalogStar> &catalogStars)
+void MainWindow::onDebugStarCorrelation()
 {
-        for (const auto& star : catalogStars) {
-	      QString id;             // Star identifier (e.g., HD123456, HIP67890)
-	      double ra = 0.0;        // Right ascension (degrees)
-	      double dec = 0.0;       // Declination (degrees)
-	      double magnitude = 0.0; // Visual magnitude
-	      QString spectralType;   // Spectral type (if available)
-	      QPointF pixelPos;       // Calculated pixel position
+    if (!m_catalogQueried) {
+      return;
+    }
 
-                qDebug() << QString("Star %1: pos=(%2,%3) magnitude=%4")
-		  .arg(star.id)
-		  .arg(star.pixelPos.x(), 0, 'f', 1)
-		  .arg(star.pixelPos.y(), 0, 'f', 1)
-		  .arg(star.magnitude, 0, 'f', 1);
-            }
-
+    QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+    StarMaskGenerator::dumpcat(catalogStars);
 }
 
 void MainWindow::plotCatalogStarsDirectly()
@@ -2265,30 +1857,28 @@ void MainWindow::plotCatalogStarsDirectly()
         double fieldRadius = m_fieldRadiusSpin->value();
         
         // Set magnitude limit from plotting controls
-        m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
+	//        m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
         
         m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, fieldRadius);
     }
 
     // Catalog already queried, just display it
     QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
-    dumpcat(catalogStars);
+    StarMaskGenerator::dumpcat(catalogStars);
     // Create a validation result just for display purposes
     ValidationResult plotResult;
     plotResult.catalogStars = catalogStars;
     plotResult.totalCatalog = catalogStars.size();
     plotResult.isValid = true;
-    plotResult.summary = QString("Catalog Plot:\n%1 stars plotted (magnitude ≤ %.1f)\nSource: %2")
-			.arg(catalogStars.size())
-			.arg(m_plotMagnitudeSpin->value());
+    plotResult.summary = QString("Catalog Plot:\n%1 stars plotted\nSource: %2")
+      .arg(catalogStars.size());
 
     m_imageDisplayWidget->setValidationResults(plotResult);
     m_resultsText->setPlainText(plotResult.summary);
 
     m_catalogPlotted = true;
-    m_statusLabel->setText(QString("Plotted %1 catalog stars (mag ≤ %.1f)")
-			  .arg(catalogStars.size())
-			  .arg(m_plotMagnitudeSpin->value()));
+    m_statusLabel->setText(QString("Plotted %1 catalog stars")
+			   .arg(catalogStars.size()));
 
     updatePlottingControls();
 }
@@ -2298,15 +1888,12 @@ void MainWindow::onPlotModeToggled(bool plotMode)
     m_plotMode = plotMode;
     
     // Show/hide appropriate control groups
-    m_validationGroup->setVisible(!plotMode);
     m_plottingGroup->setVisible(plotMode);
     
     // Update button states
     if (plotMode) {
-        m_validateButton->setVisible(false);
         m_plotCatalogButton->setVisible(true);
     } else {
-        m_validateButton->setVisible(true);
         m_plotCatalogButton->setVisible(false);
     }
     
@@ -2325,7 +1912,7 @@ void MainWindow::onPlotModeToggled(bool plotMode)
 void MainWindow::updatePlottingControls()
 {
     bool canPlot = m_hasWCS && m_imageData;
-    m_plotCatalogButton->setEnabled(canPlot && !m_queryProgressBar->isVisible());
+    m_plotCatalogButton->setEnabled(canPlot);
     
     // Update tooltip
     if (!m_hasWCS) {
@@ -2399,33 +1986,6 @@ void MainWindow::onDetectStars()
     updateValidationControls();
 }
 
-void MainWindow::onValidateStars()
-{
-    if (!m_starsDetected) {
-        QMessageBox::information(this, "Validation", "Please detect stars first.");
-        return;
-    }
-    
-    if (!m_hasWCS) {
-        QMessageBox::warning(this, "Validation", "No WCS information available. Cannot validate against catalog.");
-        return;
-    }
-    
-    // Start catalog query if not already done
-    if (!m_catalogQueried) {
-        WCSData wcs = m_catalogValidator->getWCSData();
-        
-        // Calculate field radius (diagonal of image)
-        double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
-        fieldRadius = std::max(fieldRadius, 0.5); // Minimum 0.5 degrees
-        
-        m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, fieldRadius);
-    } else {
-        // Perform validation with existing catalog data
-        performValidation();
-    }
-}
-
 void MainWindow::performValidation()
 {
     ValidationResult result = m_catalogValidator->validateStars(m_lastStarMask.starCenters, m_lastStarMask.starRadii);
@@ -2457,25 +2017,13 @@ void MainWindow::onValidationModeChanged()
     m_catalogValidator->setValidationMode(mode);
 }
 
-void MainWindow::onMagnitudeLimitChanged()
-{
-    m_catalogValidator->setMagnitudeLimit(m_magnitudeLimitSpin->value());
-    m_catalogQueried = false; // Need to re-query with new limit
-    m_catalogPlotted = false;
-    updateValidationControls();
-    updatePlottingControls();
-}
-
 void MainWindow::onPixelToleranceChanged()
 {
-    m_catalogValidator->setMatchingTolerance(m_pixelToleranceSpin->value());
+  //    m_catalogValidator->setMatchingTolerance(m_pixelToleranceSpin->value());
 }
 
 void MainWindow::onCatalogQueryStarted()
 {
-    m_queryProgressBar->setVisible(true);
-    m_queryProgressBar->setRange(0, 0); // Indeterminate progress
-    m_validateButton->setEnabled(false);
     m_plotCatalogButton->setEnabled(false);
     m_statusLabel->setText("Querying star catalog...");
 }
@@ -2483,9 +2031,7 @@ void MainWindow::onCatalogQueryStarted()
 // Replace your existing onCatalogQueryFinished method with this:
 void MainWindow::onCatalogQueryFinished(bool success, const QString& message)
 {
-    m_queryProgressBar->setVisible(false);
-    m_validateButton->setEnabled(m_starsDetected && m_hasWCS && !m_plotMode);
-    m_plotCatalogButton->setEnabled(m_hasWCS && m_plotMode);
+     m_plotCatalogButton->setEnabled(m_hasWCS && m_plotMode);
     
     if (success) {
         m_catalogQueried = true;
@@ -2568,23 +2114,6 @@ void MainWindow::onValidationOverlayToggled(bool visible)
 
 void MainWindow::updateValidationControls()
 {
-    if (m_plotMode) {
-        // In plot mode, disable validation controls
-        m_validateButton->setEnabled(false);
-        return;
-    }
-    
-    bool canValidate = m_starsDetected && m_hasWCS;
-    m_validateButton->setEnabled(canValidate && !m_queryProgressBar->isVisible());
-    
-    // Update tooltip
-    if (!m_hasWCS) {
-        m_validateButton->setToolTip("No WCS information available in image");
-    } else if (!m_starsDetected) {
-        m_validateButton->setToolTip("Detect stars first");
-    } else {
-        m_validateButton->setToolTip("Validate detected stars against catalog");
-    }
 }
 
 void MainWindow::updateStatusDisplay()
@@ -2805,7 +2334,6 @@ void MainWindow::quickDiagnoseCurrentMatches()
     qDebug() << QString("  Average match distance: %.2f px").arg(avgDistance);
     qDebug() << QString("  Close but failing matches: %1").arg(closeButFailing);
     qDebug() << QString("  Far but passing matches: %1").arg(farButPassing);
-    qDebug() << QString("  Current pixel tolerance: %1 px").arg(m_pixelToleranceSpin->value());
     
     // Quick recommendations
     if (closeButFailing > 0) {
@@ -2815,237 +2343,8 @@ void MainWindow::quickDiagnoseCurrentMatches()
         qDebug() << "   → Use full debug system for detailed analysis";
     }
     
-    if (avgDistance > m_pixelToleranceSpin->value() * 0.8) {
-        qDebug() << "💡 RECOMMENDATION: Average distance close to tolerance limit";
-        qDebug() << "   → Consider increasing tolerance to" << (avgDistance * 1.2);
-    }
-    
     if (closeButFailing == 0 && farButPassing == 0) {
         qDebug() << "✅ Matching criteria appear to be working correctly";
         qDebug() << "   Issue may be in coordinate transformations or catalog accuracy";
     }
 }
-
-// Helper function to add comprehensive debugging to your existing validation
-void MainWindow::debugCurrentValidationResults()
-{
-    if (!m_validationComplete) {
-        qDebug() << "No validation results available for debugging";
-        return;
-    }
-    
-    qDebug() << "\n=== DEBUGGING CURRENT VALIDATION RESULTS ===";
-    
-    // Basic statistics
-    qDebug() << QString("Validation summary:");
-    qDebug() << QString("  Detected stars: %1").arg(m_lastValidation.totalDetected);
-    qDebug() << QString("  Catalog stars: %1").arg(m_lastValidation.totalCatalog);
-    qDebug() << QString("  Matches found: %1").arg(m_lastValidation.matches.size());
-    qDebug() << QString("  Good matches: %1").arg(m_lastValidation.totalMatches);
-    qDebug() << QString("  Success rate: %.1f%%").arg(m_lastValidation.matchPercentage);
-    
-    // Analyze match distances
-    QVector<double> distances;
-    QVector<double> magnitudeDiffs;
-    
-    for (const auto& match : m_lastValidation.matches) {
-        distances.append(match.distance);
-        if (match.magnitudeDiff > 0) {
-            magnitudeDiffs.append(match.magnitudeDiff);
-        }
-    }
-    
-    if (!distances.isEmpty()) {
-        std::sort(distances.begin(), distances.end());
-        double minDist = distances.first();
-        double maxDist = distances.last();
-        double medianDist = distances[distances.size() / 2];
-        double avgDist = std::accumulate(distances.begin(), distances.end(), 0.0) / distances.size();
-        
-        qDebug() << QString("Distance statistics:");
-        qDebug() << QString("  Min: %.2f px, Max: %.2f px").arg(minDist).arg(maxDist);
-        qDebug() << QString("  Median: %.2f px, Average: %.2f px").arg(medianDist).arg(avgDist);
-        qDebug() << QString("  Current tolerance: %1 px").arg(m_pixelToleranceSpin->value());
-        
-        // Count distances within various tolerances
-        int within3px = std::count_if(distances.begin(), distances.end(), [](double d) { return d <= 3.0; });
-        int within5px = std::count_if(distances.begin(), distances.end(), [](double d) { return d <= 5.0; });
-        int within10px = std::count_if(distances.begin(), distances.end(), [](double d) { return d <= 10.0; });
-        
-        qDebug() << QString("Distance distribution:");
-        qDebug() << QString("  ≤ 3px: %1/%2 (%.1f%%)").arg(within3px).arg(distances.size()).arg(100.0*within3px/distances.size());
-        qDebug() << QString("  ≤ 5px: %1/%2 (%.1f%%)").arg(within5px).arg(distances.size()).arg(100.0*within5px/distances.size());
-        qDebug() << QString("  ≤ 10px: %1/%2 (%.1f%%)").arg(within10px).arg(distances.size()).arg(100.0*within10px/distances.size());
-    }
-    
-    // Analyze magnitude differences if available
-    if (!magnitudeDiffs.isEmpty()) {
-        std::sort(magnitudeDiffs.begin(), magnitudeDiffs.end());
-        double avgMagDiff = std::accumulate(magnitudeDiffs.begin(), magnitudeDiffs.end(), 0.0) / magnitudeDiffs.size();
-        double maxMagDiff = magnitudeDiffs.last();
-        
-        qDebug() << QString("Magnitude difference statistics:");
-        qDebug() << QString("  Average: %.2f mag, Maximum: %.2f mag").arg(avgMagDiff).arg(maxMagDiff);
-        
-        int magWithin1 = std::count_if(magnitudeDiffs.begin(), magnitudeDiffs.end(), [](double d) { return d <= 1.0; });
-        int magWithin2 = std::count_if(magnitudeDiffs.begin(), magnitudeDiffs.end(), [](double d) { return d <= 2.0; });
-        
-        qDebug() << QString("  ≤ 1.0 mag: %1/%2 (%.1f%%)").arg(magWithin1).arg(magnitudeDiffs.size()).arg(100.0*magWithin1/magnitudeDiffs.size());
-        qDebug() << QString("  ≤ 2.0 mag: %1/%2 (%.1f%%)").arg(magWithin2).arg(magnitudeDiffs.size()).arg(100.0*magWithin2/magnitudeDiffs.size());
-    }
-    
-    // Check for systematic issues
-    double sumDx = 0, sumDy = 0;
-    int offsetCount = 0;
-    
-    for (const auto& match : m_lastValidation.matches) {
-        if (match.detectedIndex >= 0 && match.detectedIndex < m_lastStarMask.starCenters.size() &&
-            match.catalogIndex >= 0 && match.catalogIndex < m_lastValidation.catalogStars.size()) {
-            
-            QPoint detected = m_lastStarMask.starCenters[match.detectedIndex];
-            QPointF catalog = m_lastValidation.catalogStars[match.catalogIndex].pixelPos;
-            
-            sumDx += detected.x() - catalog.x();
-            sumDy += detected.y() - catalog.y();
-            offsetCount++;
-        }
-    }
-    
-    if (offsetCount > 0) {
-        double avgDx = sumDx / offsetCount;
-        double avgDy = sumDy / offsetCount;
-        double systematicOffset = sqrt(avgDx * avgDx + avgDy * avgDy);
-        
-        qDebug() << QString("Systematic offset analysis:");
-        qDebug() << QString("  Average dx: %.2f px, dy: %.2f px").arg(avgDx).arg(avgDy);
-        qDebug() << QString("  Systematic offset magnitude: %.2f px").arg(systematicOffset);
-        
-        if (systematicOffset > 2.0) {
-            qDebug() << "⚠️  LARGE systematic offset detected!";
-            qDebug() << "   Possible causes: WCS calibration error, coordinate system mismatch";
-        } else if (systematicOffset > 1.0) {
-            qDebug() << "⚠️  Moderate systematic offset detected";
-            qDebug() << "   Consider checking WCS calibration";
-        } else {
-            qDebug() << "✅ Systematic offset within acceptable range";
-        }
-    }
-    
-    // Identify specific problematic matches
-    qDebug() << "\nProblematic matches analysis:";
-    int goodDistanceBadOverall = 0;
-    int badDistanceGoodOverall = 0;
-    
-    for (const auto& match : m_lastValidation.matches) {
-        bool goodDistance = (match.distance <= m_pixelToleranceSpin->value());
-        bool goodMagnitude = (match.magnitudeDiff <= 2.0); // Assuming 2.0 mag tolerance
-        
-        if (goodDistance && !match.isGoodMatch) {
-            goodDistanceBadOverall++;
-            if (goodDistanceBadOverall <= 5) { // Show first 5 cases
-                qDebug() << QString("  Good distance (%.2f px) but failed overall: det[%1] -> cat[%2]")
-                            .arg(match.distance).arg(match.detectedIndex).arg(match.catalogIndex);
-            }
-        }
-        
-        if (!goodDistance && match.isGoodMatch) {
-            badDistanceGoodOverall++;
-            qDebug() << QString("  Bad distance (%.2f px) but passed overall: det[%1] -> cat[%2]")
-                        .arg(match.distance).arg(match.detectedIndex).arg(match.catalogIndex);
-        }
-    }
-    
-    qDebug() << QString("  Total good distance but failed overall: %1").arg(goodDistanceBadOverall);
-    qDebug() << QString("  Total bad distance but passed overall: %1").arg(badDistanceGoodOverall);
-    
-    // Recommendations
-    qDebug() << "\n=== RECOMMENDATIONS ===";
-    
-    if (goodDistanceBadOverall > 0) {
-        qDebug() << "🔍 PRIMARY ISSUE: Stars with good pixel distances are failing validation";
-        qDebug() << "   Most likely causes:";
-        qDebug() << "   1. Magnitude difference criteria too strict";
-        qDebug() << "   2. Additional validation logic rejecting good matches";
-        qDebug() << "   3. Magnitude estimation problems in detected stars";
-        qDebug() << "   → Use enhanced debugging tools for detailed analysis";
-    }
-    
-    if (m_lastValidation.matchPercentage < 20.0) {
-        qDebug() << "🔍 LOW SUCCESS RATE: Very few stars are matching";
-        qDebug() << "   → Check WCS calibration and coordinate transformations";
-        qDebug() << "   → Verify catalog star positions are in image bounds";
-        qDebug() << "   → Consider relaxing matching tolerances";
-    }
-    
-    if (!distances.isEmpty() && distances.size() < m_lastValidation.totalDetected * 0.5) {
-        qDebug() << "🔍 FEW POTENTIAL MATCHES: Not finding nearby catalog stars";
-        qDebug() << "   → Check catalog query radius and magnitude limits";
-        qDebug() << "   → Verify coordinate system consistency";
-        qDebug() << "   → Check if catalog stars are being projected correctly";
-    }
-    
-    qDebug() << "\n=== DEBUG COMPLETE ===";
-    qDebug() << "For more detailed analysis, use the Debug menu options.";
-}
-
-// Simplified inline debug you can call anywhere
-#define QUICK_MATCH_DEBUG() do { \
-    if (m_validationComplete) { \
-        int good = 0, total = 0; \
-        for (const auto& m : m_lastValidation.matches) { \
-            if (m.distance <= m_pixelToleranceSpin->value()) total++; \
-            if (m.isGoodMatch) good++; \
-        } \
-        qDebug() << QString("QUICK: %1/%2 good matches, %3 within tolerance") \
-                    .arg(good).arg(m_lastValidation.matches.size()).arg(total); \
-    } \
-} while(0)
-
-// Easy-to-use debugging macros you can add anywhere in your validation code
-#define DEBUG_MATCH_ATTEMPT(detIdx, catIdx, distance, reason) \
-    qDebug() << QString("MATCH_ATTEMPT: det[%1] -> cat[%2], dist=%.2f px, %3") \
-                .arg(detIdx).arg(catIdx).arg(distance).arg(reason)
-
-#define DEBUG_MATCH_RESULT(detIdx, catIdx, success, reason) \
-    qDebug() << QString("MATCH_RESULT: det[%1] -> cat[%2] %3: %4") \
-                .arg(detIdx).arg(catIdx).arg(success ? "SUCCESS" : "FAILED").arg(reason)
-
-#define DEBUG_SYSTEMATIC_OFFSET(dx, dy) \
-    qDebug() << QString("SYSTEMATIC_OFFSET: dx=%.2f, dy=%.2f px (magnitude=%.2f px)") \
-                .arg(dx).arg(dy).arg(sqrt(dx*dx + dy*dy))
-
-// Usage example in your validation code:
-/*
-void StarCatalogValidator::performMatching(...)
-{
-    // At the start of matching
-    qDebug() << "=== STARTING STAR MATCHING ===";
-    
-    for (int i = 0; i < detectedStars.size(); ++i) {
-        QPoint detected = detectedStars[i];
-        
-        for (int j = 0; j < m_catalogStars.size(); ++j) {
-            if (!m_catalogStars[j].isValid) continue;
-            
-            double distance = calculateDistance(detected, m_catalogStars[j].pixelPos);
-            
-            DEBUG_MATCH_ATTEMPT(i, j, distance, 
-                QString("cat_mag=%.1f").arg(m_catalogStars[j].magnitude));
-            
-            if (distance < bestDistance) {
-                bestDistance = distance;
-                bestCatalogIndex = j;
-            }
-        }
-        
-        if (bestCatalogIndex >= 0) {
-            bool isGood = isGoodMatch(bestDistance, magnitudeDiff);
-            
-            DEBUG_MATCH_RESULT(i, bestCatalogIndex, isGood,
-                QString("dist=%.2f, mag_diff=%.2f").arg(bestDistance).arg(magnitudeDiff));
-        }
-    }
-    
-    QUICK_MATCH_DEBUG();
-}
-*/

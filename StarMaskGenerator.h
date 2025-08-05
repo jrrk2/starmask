@@ -5,6 +5,7 @@
 #include <QPoint>
 #include <QImage>
 #include "ImageReader.h"
+#include "StarCatalogValidator.h"
 
 struct StarMaskResult {
     QVector<QPoint> starCenters;
@@ -27,6 +28,8 @@ public:
                                              float peakResponse = 0.5f,
                                              float maxDistortion = 0.8f,
                                              bool enablePSFFitting = true);
+    static void dumpcat(QVector<CatalogStar> &catalogStars);
+    static void validateStarDetection();
 
 private:
     // Fallback simple detection method

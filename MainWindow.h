@@ -35,7 +35,7 @@ private slots:
     void onValidateStars();
     void onPlotCatalogStars();  // NEW: Direct catalog plotting
     void onValidationModeChanged();
-    void onMagnitudeLimitChanged();
+  //    void onMagnitudeLimitChanged();
     void onPixelToleranceChanged();
     void onPlotModeToggled(bool plotMode);  // NEW: Toggle between modes
     
@@ -49,19 +49,18 @@ private slots:
     void onStarOverlayToggled(bool visible);
     void onCatalogOverlayToggled(bool visible);
     void onValidationOverlayToggled(bool visible);
-    void onValidateStarsEnhanced();
+  //    void onValidateStarsEnhanced();
     void onMatchingParametersChanged();
     void onShowMatchingDetails();
     void onExportMatchingResults();
     void onVisualizeDistortions();
     void onCalibrateDistortionModel();
-    void onDebugPixelMatching();
-    void onAnalyzeMatchingCriteria();
-    void onTestParameterSensitivity();
-  
+  //    void onDebugPixelMatching();
+  //    void onAnalyzeMatchingCriteria();
+  //    void onTestParameterSensitivity();
+    void onDebugStarCorrelation();
 private:
     void setupUI();
-    void setupValidationControls();
     void setupCatalogPlottingControls();  // NEW: Setup plotting controls
     void updateValidationControls();
     void updatePlottingControls();        // NEW: Update plotting controls
@@ -88,7 +87,7 @@ private:
     void displayEnhancedResults(const EnhancedValidationResult& result);
     void visualizeTrianglePatterns(const EnhancedValidationResult& result);
     void setupDebuggingMenu();
-    void showPixelDebugDialog();
+  //    void showPixelDebugDialog();
     void showWCSDebugInfo();
     void testWCSTransformations();
     void rerunValidationWithDebug();
@@ -107,26 +106,24 @@ private:
     
     // Image controls
     QPushButton* m_loadButton;
-    QPushButton* m_validateButton;
     QPushButton* m_plotCatalogButton;     // NEW: Plot catalog button
     
     // Mode controls
     QCheckBox* m_plotModeCheck;           // NEW: Toggle plot mode
     
     // Validation controls
-    QGroupBox* m_validationGroup;
     QVBoxLayout* m_validationLayout;
     
     // Catalog plotting controls
     QGroupBox* m_plottingGroup;           // NEW: Plotting controls group
     QVBoxLayout* m_plottingLayout;        // NEW: Plotting layout
-    QDoubleSpinBox* m_plotMagnitudeSpin;  // NEW: Magnitude limit for plotting
+  //    QDoubleSpinBox* m_plotMagnitudeSpin;  // NEW: Magnitude limit for plotting
     QDoubleSpinBox* m_fieldRadiusSpin;    // NEW: Field radius control
     
     QComboBox* m_validationModeCombo;
-    QSpinBox* m_magnitudeLimitSpin;
-    QSpinBox* m_pixelToleranceSpin;
-    QProgressBar* m_queryProgressBar;
+  //    QSpinBox* m_magnitudeLimitSpin;
+  //    QSpinBox* m_pixelToleranceSpin;
+  //    QProgressBar* m_queryProgressBar;
     
     // Status display
     QLabel* m_statusLabel;

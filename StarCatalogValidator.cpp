@@ -952,19 +952,13 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
         params.centerRA = centerRA;
         params.centerDec = centerDec;
         params.radiusDegrees = radiusDegrees;
-        params.maxMagnitude = m_magnitudeLimit;
+        params.maxMagnitude = 17.0;
         params.maxResults = 10000;
         params.useProperMotion = true;  // Apply proper motion to current epoch
         params.epochYear = 2025.5;     // Current epoch
         
-        // For faint stars, don't require spectra; for bright stars, prefer them
-        if (m_magnitudeLimit <= 12.0) {
-            // For bright star searches, prefer stars with spectra when available
-            params.requireSpectrum = false; // Don't strictly require, but prefer
-        }
-        
-        qDebug() << QString("🔍 Searching Gaia GDR3: center=(%.4f°,%.4f°) radius=%.2f° mag≤%.1f")
-                    .arg(centerRA).arg(centerDec).arg(radiusDegrees).arg(m_magnitudeLimit);
+        qDebug() << QString("🔍 Searching Gaia GDR3: center=(%.4f°,%.4f°) radius=%.2f°")
+	  .arg(centerRA).arg(centerDec).arg(radiusDegrees);
         
         // Query the Gaia catalog
         auto gaiaStars = GaiaGDR3Catalog::queryRegion(params);
@@ -1087,7 +1081,7 @@ void StarCatalogValidator::queryGaiaWithSpectra(double centerRA, double centerDe
     
     try {
         auto spectralStars = GaiaGDR3Catalog::findStarsWithSpectra(
-            centerRA, centerDec, radiusDegrees, m_magnitudeLimit);
+            centerRA, centerDec, radiusDegrees, 99.0);
         
         // Convert to catalog stars
         m_catalogStars.clear();
@@ -1233,7 +1227,6 @@ StarCatalogValidator::StarCatalogValidator(QObject* parent)
     , m_validationMode(Loose)
     , m_pixelTolerance(5.0)
     , m_magnitudeTolerance(2.0)
-    , m_magnitudeLimit(12.0)
     , m_wcsMatrixValid(false)
     , m_det(0.0)
     , m_curl(curl_easy_init())
@@ -1283,13 +1276,13 @@ void StarCatalogValidator::setMatchingTolerance(double pixelTolerance, double ma
     m_magnitudeTolerance = magnitudeTolerance;
     qDebug() << "Tolerances set - Pixel:" << pixelTolerance << "Magnitude:" << magnitudeTolerance;
 }
-
+/*
 void StarCatalogValidator::setMagnitudeLimit(double faintestMagnitude)
 {
     m_magnitudeLimit = faintestMagnitude;
     qDebug() << "Magnitude limit set to:" << faintestMagnitude;
 }
-
+*/
 bool StarCatalogValidator::setWCSData(const WCSData& wcs)
 {
     m_wcsData = wcs;
@@ -1597,11 +1590,9 @@ void StarCatalogValidator::parseGaiaData(const QJsonArray& stars)
                 double dec = starData[2].toDouble();
                 double magnitude = starData[3].toDouble();
                 
-                if (magnitude <= m_magnitudeLimit) {
-                    CatalogStar star(QString("Gaia_%1").arg(sourceId), ra, dec, magnitude);
-		    qDebug() << sourceId << ra << dec << magnitude;
-                    m_catalogStars.append(star);
-                }
+		CatalogStar star(QString("Gaia_%1").arg(sourceId), ra, dec, magnitude);
+		qDebug() << sourceId << ra << dec << magnitude;
+		m_catalogStars.append(star);
             }
         }
     }
@@ -2222,11 +2213,6 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
     
     for (const auto& brightStar : brightStars) {
         // Check if magnitude is within our limit
-        if (brightStar.magnitude > m_magnitudeLimit) {
-            qDebug() << QString("  Skipping %1 (mag %.2f > limit %.2f)")
-                        .arg(brightStar.name).arg(brightStar.magnitude).arg(m_magnitudeLimit);
-            continue;
-        }
         
         // Create catalog star
         CatalogStar catalogStar(brightStar.id, brightStar.ra, brightStar.dec, brightStar.magnitude);
