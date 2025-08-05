@@ -31,6 +31,11 @@ void MainWindow::setupDebuggingMenu()
     QAction* debugStarCorrelation = debugMenu->addAction("Debug Star Correlation");
     debugStarCorrelation->setToolTip("Matching stars correlation");
     connect(debugStarCorrelation, &QAction::triggered, this, &MainWindow::onDebugStarCorrelation);
+
+    QAction* debugWCS = debugMenu->addAction("Debug WCS");
+    debugWCS->setToolTip("Display WCS for current image");
+    connect(debugWCS, &QAction::triggered, this, &MainWindow::showWCSDebugInfo);
+
     /*        
     QAction* debugPixelAction = debugMenu->addAction("Debug Pixel Matching");
     debugPixelAction->setToolTip("Analyze why visually matching stars fail mathematical criteria");
@@ -194,10 +199,10 @@ void MainWindow::testWCSTransformations()
                             pow(centerY - centerPixelRoundTrip.y(), 2));
     
     qDebug() << QString("Center round-trip test:");
-    qDebug() << QString("  Original pixel: (%.1f, %.1f)").arg(centerX).arg(centerY);
-    qDebug() << QString("  Sky coordinates: (%.6f°, %.6f°)").arg(centerSky.x()).arg(centerSky.y());
-    qDebug() << QString("  Round-trip pixel: (%.1f, %.1f)").arg(centerPixelRoundTrip.x()).arg(centerPixelRoundTrip.y());
-    qDebug() << QString("  Round-trip error: %.3f px").arg(centerError);
+    qDebug() << QString("  Original pixel: (%1, %2)").arg(centerX).arg(centerY);
+    qDebug() << QString("  Sky coordinates: (%1°, 2f°)").arg(centerSky.x()).arg(centerSky.y());
+    qDebug() << QString("  Round-trip pixel: (%1, %2)").arg(centerPixelRoundTrip.x()).arg(centerPixelRoundTrip.y());
+    qDebug() << QString("  Round-trip error: %1 px").arg(centerError);
     
     // Test corners
     QVector<QPointF> testPoints = {
@@ -224,7 +229,7 @@ void MainWindow::testWCSTransformations()
         maxError = std::max(maxError, error);
         totalError += error;
         
-        qDebug() << QString("  %1: error=%.3f px").arg(cornerNames[i]).arg(error);
+        qDebug() << QString("  %1: error=%2 px").arg(cornerNames[i]).arg(error);
     }
     
     double avgError = totalError / testPoints.size();
@@ -232,16 +237,16 @@ void MainWindow::testWCSTransformations()
     QString testResults = QString(
         "WCS TRANSFORMATION TEST RESULTS\n"
         "===============================\n\n"
-        "Center Round-trip Error: %.3f px\n"
-        "Average Corner Error: %.3f px\n"
-        "Maximum Corner Error: %.3f px\n\n"
+        "Center Round-trip Error: %1 px\n"
+        "Average Corner Error: %2 px\n"
+        "Maximum Corner Error: %3 px\n\n"
         "Error Assessment:\n"
         "< 0.1 px: Excellent (numerical precision)\n"
         "< 0.5 px: Very Good (sub-pixel accuracy)\n"
         "< 1.0 px: Good (suitable for star matching)\n"
         "< 2.0 px: Acceptable (may need tolerance adjustment)\n"
         "> 2.0 px: Poor (WCS calibration issues)\n\n"
-        "Your WCS Quality: %1\n\n"
+        "Your WCS Quality: %4\n\n"
         "If errors are large (>1px), consider:\n"
         "• Re-solving astrometry with more reference stars\n"
         "• Checking for systematic coordinate errors\n"
@@ -542,7 +547,7 @@ void MainWindow::onValidateStars()
         m_imageDisplayWidget->setValidationResults(m_lastEnhancedValidation);
         
         // Update status
-        QString statusText = QString("Enhanced validation: %1/%2 matches (%.1f%% confidence)")
+        QString statusText = QString("Enhanced validation: %1/%2 matches (%3%% confidence)")
                             .arg(m_lastEnhancedValidation.totalMatches)
                             .arg(m_lastEnhancedValidation.totalDetected)
                             .arg(m_lastEnhancedValidation.matchingConfidence);
@@ -607,11 +612,11 @@ void MainWindow::displayEnhancedResults(const EnhancedValidationResult& result)
             const auto& match = sortedMatches[i];
             detailedResults += QString("Match %1: Det[%2] ↔ Cat[%3]\n")
                               .arg(i + 1).arg(match.detectedIndex).arg(match.catalogIndex);
-            detailedResults += QString("  Distance: %.2f px, Confidence: %.1f%%\n")
+            detailedResults += QString("  Distance: %1 px, Confidence: %2%%\n")
                               .arg(match.pixelDistance).arg(match.confidence * 100.0);
             
             if (match.triangleError > 0) {
-                detailedResults += QString("  Triangle Error: %.3f\n").arg(match.triangleError);
+                detailedResults += QString("  Triangle Error: %1\n").arg(match.triangleError);
             }
             
             if (!match.supportingMatches.isEmpty()) {
@@ -629,8 +634,8 @@ void MainWindow::displayEnhancedResults(const EnhancedValidationResult& result)
                                   / result.radialDistortions.size();
             
             detailedResults += QString("\nDistortion Analysis:\n");
-            detailedResults += QString("  Max Radial Distortion: %.3f pixels\n").arg(maxDistortion);
-            detailedResults += QString("  Average Distortion: %.3f pixels\n").arg(avgDistortion);
+            detailedResults += QString("  Max Radial Distortion: %1 pixels\n").arg(maxDistortion);
+            detailedResults += QString("  Average Distortion: %1 pixels\n").arg(avgDistortion);
         }
     }
     
@@ -703,10 +708,10 @@ void MainWindow::onShowMatchingDetails()
                            .arg(triangle.starIndices[0])
                            .arg(triangle.starIndices[1])
                            .arg(triangle.starIndices[2]);
-            triangleInfo += QString("  Sides: %.1f, %.1f, %.1f px\n")
+            triangleInfo += QString("  Sides: %1, %2, %3 px\n")
                            .arg(triangle.side1).arg(triangle.side2).arg(triangle.side3);
-            triangleInfo += QString("  Area: %.1f px²\n").arg(triangle.area);
-            triangleInfo += QString("  Ratios: %.3f, %.3f, %.3f\n\n")
+            triangleInfo += QString("  Area: %1 px²\n").arg(triangle.area);
+            triangleInfo += QString("  Ratios: %1, %2, %3\n\n")
                            .arg(triangle.ratio12).arg(triangle.ratio13).arg(triangle.ratio23);
         }
         
@@ -758,10 +763,10 @@ void MainWindow::onVisualizeDistortions()
                         / m_lastEnhancedValidation.radialDistortions.size();
         
         distortionInfo += QString("Radial Distortion Statistics:\n");
-        distortionInfo += QString("  Maximum: %.3f pixels\n").arg(maxDist);
-        distortionInfo += QString("  Minimum: %.3f pixels\n").arg(minDist);
-        distortionInfo += QString("  Average: %.3f pixels\n").arg(avgDist);
-        distortionInfo += QString("  RMS: %.3f pixels\n\n").arg(m_lastEnhancedValidation.geometricRMS);
+        distortionInfo += QString("  Maximum: %1 pixels\n").arg(maxDist);
+        distortionInfo += QString("  Minimum: %1 pixels\n").arg(minDist);
+        distortionInfo += QString("  Average: %1 pixels\n").arg(avgDist);
+        distortionInfo += QString("  RMS: %1 pixels\n\n").arg(m_lastEnhancedValidation.geometricRMS);
     }
     
     if (!m_lastEnhancedValidation.residualVectors.isEmpty()) {
@@ -774,7 +779,7 @@ void MainWindow::onVisualizeDistortions()
             const QPointF& residual = m_lastEnhancedValidation.residualVectors[i];
             const auto& match = m_lastEnhancedValidation.enhancedMatches[i];
             
-            distortionInfo += QString("Star %1: (%.1f, %.1f) → (%.3f, %.3f)\n")
+            distortionInfo += QString("Star %1: (%2, %3) → (%4, %5)\n")
                              .arg(match.detectedIndex)
                              .arg(m_lastStarMask.starCenters[match.detectedIndex].x())
                              .arg(m_lastStarMask.starCenters[match.detectedIndex].y())
@@ -1236,7 +1241,7 @@ void MainWindow::setupGaiaDR3Catalog()
         
         QFileInfo info(catalogPath);
         double sizeMB = info.size() / (1024.0 * 1024.0);
-        qDebug() << QString("📊 Catalog size: %.1f MB").arg(sizeMB);
+        qDebug() << QString("📊 Catalog size: %1 MB").arg(sizeMB);
         
         // Set the catalog path
         GaiaGDR3Catalog::setCatalogPath(catalogPath);
@@ -1255,7 +1260,7 @@ void MainWindow::setupGaiaDR3Catalog()
             }
             
             // Update status
-            m_statusLabel->setText(QString("Gaia GDR3 catalog ready (%.1f MB)").arg(sizeMB));
+            m_statusLabel->setText(QString("Gaia GDR3 catalog ready (%1 MB)").arg(sizeMB));
         } else {
             qDebug() << "❌ Gaia GDR3 database validation failed";
             m_statusLabel->setText("Gaia GDR3 catalog found but validation failed");
@@ -1317,7 +1322,7 @@ void MainWindow::setupCatalogMenu()
         if (m_hasWCS) {
             WCSData wcs = m_catalogValidator->getWCSData();
             qDebug() << "\n=== TESTING GAIA GDR3 QUERY ===";
-            qDebug() << QString("Image center: RA=%.4f° Dec=%.4f°").arg(wcs.crval1).arg(wcs.crval2);
+            qDebug() << QString("Image center: RA=%1° Dec=%2°").arg(wcs.crval1).arg(wcs.crval2);
             
             auto start = QTime::currentTime();
             m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, 1.0); // 1 degree radius test
@@ -1380,11 +1385,11 @@ void MainWindow::browseGaiaCatalogFile()
         double sizeMB = info.size() / (1024.0 * 1024.0);
         
         qDebug() << "📂 User selected Gaia catalog:" << filePath;
-        qDebug() << QString("📊 Size: %.1f MB").arg(sizeMB);
+        qDebug() << QString("📊 Size: %1 MB").arg(sizeMB);
         
         // Validate the new catalog
         if (GaiaGDR3Catalog::validateDatabase()) {
-            m_statusLabel->setText(QString("Custom Gaia GDR3 catalog loaded (%.1f MB)").arg(sizeMB));
+            m_statusLabel->setText(QString("Custom Gaia GDR3 catalog loaded (%1 MB)").arg(sizeMB));
             qDebug() << "✅ Custom Gaia catalog validation successful";
         } else {
             m_statusLabel->setText("Gaia catalog validation failed");
@@ -1411,7 +1416,7 @@ void MainWindow::testGaiaPerformance()
     double testRadius = 2.0; // 2 degree radius for performance test
     
     qDebug() << "\n=== GAIA GDR3 PERFORMANCE COMPARISON ===";
-    qDebug() << QString("Test query: RA=%.4f° Dec=%.4f° radius=%.1f°")
+    qDebug() << QString("Test query: RA=%1° Dec=%2° radius=%3°")
                 .arg(wcs.crval1).arg(wcs.crval2).arg(testRadius);
     
     // Test different magnitude limits
@@ -1425,7 +1430,7 @@ void MainWindow::testGaiaPerformance()
         
         auto elapsed = start.msecsTo(QTime::currentTime());
         
-        qDebug() << QString("🚀 Mag ≤ %.1f: %1 stars in %2ms (%.1f stars/sec)")
+        qDebug() << QString("🚀 Mag ≤ %1: %2 stars in %3ms (%4 stars/sec)")
                     .arg(magLimit).arg(stars.size()).arg(elapsed)
                     .arg(stars.size() * 1000.0 / elapsed);
     }
@@ -1485,7 +1490,7 @@ void testGaiaGDR3Integration()
         qDebug() << "Brightest 5 stars:";
         for (int i = 0; i < qMin(5, m31_stars.size()); ++i) {
             const auto& star = m31_stars[i];
-            qDebug() << QString("  %1: RA=%.4f° Dec=%.4f° G=%.2f %2")
+            qDebug() << QString("  %1: RA=%2° Dec=%3° G=%4 %2")
                         .arg(star.sourceId).arg(star.ra).arg(star.dec)
                         .arg(star.magnitude).arg(star.spectralClass);
         }
@@ -1503,7 +1508,7 @@ void testGaiaGDR3Integration()
     qDebug() << QString("Found %1 bright stars around Polaris in %2ms").arg(bright_stars.size()).arg(elapsed);
     
     for (const auto& star : bright_stars) {
-        qDebug() << QString("  G=%.2f %1 at (%.4f°, %.4f°) PM=(%.1f, %.1f) mas/yr")
+        qDebug() << QString("  G=%1 %2 at (%3°, %4°) PM=(%5, %6) mas/yr")
                     .arg(star.spectralClass).arg(star.magnitude)
                     .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
     }
@@ -1520,7 +1525,7 @@ void testGaiaGDR3Integration()
     qDebug() << QString("Found %1 stars with BP/RP spectra around Vega in %2ms").arg(spectral_stars.size()).arg(elapsed);
     
     for (const auto& star : spectral_stars) {
-        qDebug() << QString("  %1: G=%.2f BP=%.2f RP=%.2f %2 [SPECTRUM]")
+        qDebug() << QString("  %1: G=%2 BP=%3 RP=%4 %5 [SPECTRUM]")
                     .arg(star.sourceId).arg(star.magnitude)
                     .arg(star.magBP).arg(star.magRP).arg(star.spectralClass);
     }
@@ -1541,11 +1546,11 @@ void testGaiaGDR3Integration()
     params.maxResults = 5;
     
     auto pm_stars = GaiaGDR3Catalog::queryRegion(params);
-    qDebug() << QString("Found %1 stars with proper motion applied to epoch %.1f")
+    qDebug() << QString("Found %1 stars with proper motion applied to epoch %2")
                 .arg(pm_stars.size()).arg(params.epochYear);
     
     for (const auto& star : pm_stars) {
-        qDebug() << QString("  %1: G=%.2f at (%.6f°, %.6f°) PM=(%.1f, %.1f)")
+        qDebug() << QString("  %1: G=%2 at (%3°, %4°) PM=(%5, %6)")
                     .arg(star.sourceId).arg(star.magnitude)
                     .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
     }
@@ -1577,7 +1582,7 @@ void integrateGaiaWithStarValidation()
     double fieldRadius = sqrt(imageWidth * imageWidth + imageHeight * imageHeight) 
                         * pixelScale / 3600.0 / 2.0; // Convert to degrees
     
-    qDebug() << QString("Image field: %.2f° radius around RA=%.3f° Dec=%.3f°")
+    qDebug() << QString("Image field: %1° radius around RA=%2° Dec=%3°")
                 .arg(fieldRadius).arg(centerRA).arg(centerDec);
     
     // Query Gaia catalog for this field
@@ -1608,7 +1613,7 @@ void integrateGaiaWithStarValidation()
             
             if (distance < matchTolerance) {
                 matches++;
-                qDebug() << QString("✅ Match: detected(%1,%2) ↔ Gaia %3 G=%.2f dist=%.1fpx")
+                qDebug() << QString("✅ Match: detected(%1,%2) ↔ Gaia %3 G=%4 dist=%5px")
                             .arg(detected.x()).arg(detected.y())
                             .arg(catalog.sourceId).arg(catalog.magnitude).arg(distance);
                 break;
@@ -1617,7 +1622,7 @@ void integrateGaiaWithStarValidation()
     }
     
     double matchPercentage = 100.0 * matches / detectedStars.size();
-    qDebug() << QString("Validation result: %1/%2 stars matched (%.1f%%)")
+    qDebug() << QString("Validation result: %1/%2 stars matched (%3%%)")
                 .arg(matches).arg(detectedStars.size()).arg(matchPercentage);
 }
 
@@ -1637,7 +1642,7 @@ void demonstrateAdvancedGaiaFeatures()
             double bpRpColor = star.magBP - star.magRP;
             double absoluteG = star.magnitude; // Would need distance for absolute magnitude
             
-            qDebug() << QString("  G=%.2f BP-RP=%.3f %1 plx=%.2f")
+            qDebug() << QString("  G=%1 BP-RP=%2 %3 plx=%4")
                         .arg(absoluteG).arg(bpRpColor)
                         .arg(star.spectralClass).arg(star.parallax);
         }
@@ -1658,7 +1663,7 @@ void demonstrateAdvancedGaiaFeatures()
     qDebug() << QString("Found %1 stars with PM > 50 mas/year").arg(fastMovers.size());
     for (const auto& star : fastMovers) {
         double totalPM = sqrt(star.pmRA * star.pmRA + star.pmDec * star.pmDec);
-        qDebug() << QString("  %1: PM=%.1f mas/yr G=%.2f")
+        qDebug() << QString("  %1: PM=%2 mas/yr G=%3")
                     .arg(star.sourceId).arg(totalPM).arg(star.magnitude);
     }
     
@@ -1674,7 +1679,7 @@ void demonstrateAdvancedGaiaFeatures()
     qDebug() << QString("Found %1 nearby stars").arg(nearbyStars.size());
     for (const auto& star : nearbyStars) {
         double distancePc = 1000.0 / star.parallax; // Distance in parsecs
-        qDebug() << QString("  %1: %.1f pc G=%.2f %2")
+        qDebug() << QString("  %1: %2 pc G=%3 %4")
                     .arg(star.sourceId).arg(distancePc)
                     .arg(star.magnitude).arg(star.spectralClass);
     }
@@ -1692,9 +1697,9 @@ void demonstrateAdvancedGaiaFeatures()
     }
     
     qDebug() << QString("Quality statistics from %1 stars:").arg(stars.size());
-    qDebug() << QString("  High quality: %1 (%.1f%%)").arg(highQuality).arg(100.0 * highQuality / stars.size());
-    qDebug() << QString("  With BP/RP spectra: %1 (%.1f%%)").arg(withSpectra).arg(100.0 * withSpectra / stars.size());
-    qDebug() << QString("  Good astrometry: %1 (%.1f%%)").arg(goodAstrometry).arg(100.0 * goodAstrometry / stars.size());
+    qDebug() << QString("  High quality: %1 (%2%%)").arg(highQuality).arg(100.0 * highQuality / stars.size());
+    qDebug() << QString("  With BP/RP spectra: %1 (%2%%)").arg(withSpectra).arg(100.0 * withSpectra / stars.size());
+    qDebug() << QString("  Good astrometry: %1 (%2%%)").arg(goodAstrometry).arg(100.0 * goodAstrometry / stars.size());
 }
 
 // Performance comparison between different catalog sources
@@ -1707,7 +1712,7 @@ void comparePerformanceWithOtherCatalogs()
     double testRadius = 1.0;    // 1 degree radius
     double magLimit = 15.0;
     
-    qDebug() << QString("Test region: RA=%.3f° Dec=%.3f° radius=%.1f° mag≤%.1f")
+    qDebug() << QString("Test region: RA=%1° Dec=%2° radius=%3° mag≤%4")
                 .arg(testRA).arg(testDec).arg(testRadius).arg(magLimit);
     
     // Test Gaia GDR3 local database
@@ -1716,7 +1721,7 @@ void comparePerformanceWithOtherCatalogs()
         auto gaiaStars = GaiaGDR3Catalog::queryRegion(testRA, testDec, testRadius, magLimit);
         auto elapsed = start.msecsTo(QTime::currentTime());
         
-        qDebug() << QString("🚀 Gaia GDR3 (local): %1 stars in %2ms (%.1f stars/sec)")
+        qDebug() << QString("🚀 Gaia GDR3 (local): %1 stars in %2ms (%3 stars/sec)")
                     .arg(gaiaStars.size()).arg(elapsed).arg(gaiaStars.size() * 1000.0 / elapsed);
         
         // Analyze data quality
@@ -2000,7 +2005,7 @@ void MainWindow::performValidation()
         // Update results text
         m_resultsText->setPlainText(result.summary);
         
-        m_statusLabel->setText(QString("Validation complete: %1/%2 stars matched (%.1f%%)")
+        m_statusLabel->setText(QString("Validation complete: %1/%2 stars matched (%3%%)")
                               .arg(result.totalMatches)
                               .arg(result.totalDetected)
                               .arg(result.matchPercentage));
@@ -2316,13 +2321,13 @@ void MainWindow::quickDiagnoseCurrentMatches()
             // Check for problematic cases
             if (distance <= 5.0 && !match.isGoodMatch) {
                 closeButFailing++;
-                qDebug() << QString("⚠️  Close but failing: det[%1] distance=%.2f to cat[%2]")
+                qDebug() << QString("⚠️  Close but failing: det[%1] distance=%2 to cat[%3]")
                             .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex);
             }
             
             if (distance > 8.0 && match.isGoodMatch) {
                 farButPassing++;
-                qDebug() << QString("⚠️  Far but passing: det[%1] distance=%.2f to cat[%2]")
+                qDebug() << QString("⚠️  Far but passing: det[%1] distance=%2 to cat[%3]")
                             .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex);
             }
         }
@@ -2331,7 +2336,7 @@ void MainWindow::quickDiagnoseCurrentMatches()
     double avgDistance = (validDistanceCount > 0) ? totalDistance / validDistanceCount : 0.0;
     
     qDebug() << QString("Quick diagnosis results:");
-    qDebug() << QString("  Average match distance: %.2f px").arg(avgDistance);
+    qDebug() << QString("  Average match distance: %1 px").arg(avgDistance);
     qDebug() << QString("  Close but failing matches: %1").arg(closeButFailing);
     qDebug() << QString("  Far but passing matches: %1").arg(farButPassing);
     

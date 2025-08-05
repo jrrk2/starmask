@@ -123,7 +123,7 @@ void EnhancedStarMatcher::analyzeDistortions(EnhancedValidationResult& result,
         double maxRadialDistortion = *std::max_element(result.radialDistortions.begin(),
                                                       result.radialDistortions.end());
         
-        qDebug() << QString("Distortion analysis: avg=%.3f px, max=%.3f px, radius=%.1f px")
+        qDebug() << QString("Distortion analysis: avg=%1 px, max=%2 px, radius=%3 px")
                     .arg(avgRadialDistortion).arg(maxRadialDistortion).arg(maxRadius);
         
         // Simple distortion model fitting (linear radial)
@@ -146,7 +146,7 @@ void EnhancedStarMatcher::analyzeDistortions(EnhancedValidationResult& result,
             
             if (sumR2 > 0) {
                 double k1 = sumR2D / sumR2;
-                qDebug() << QString("Estimated radial distortion coefficient k1: %.2e px/px²")
+                qDebug() << QString("Estimated radial distortion coefficient k1: %1 px/px²")
                             .arg(k1);
             }
         }
@@ -184,7 +184,7 @@ void EnhancedStarMatcher::filterLowQualityMatches(QVector<EnhancedStarMatch>& ma
     // Confidence threshold (use median as minimum, but respect parameter)
     double confidenceThreshold = std::max(m_params.minMatchConfidence, medianConfidence * 0.7);
     
-    qDebug() << QString("Quality thresholds: distance=%.2f px, confidence=%.3f")
+    qDebug() << QString("Quality thresholds: distance=%1 px, confidence=%2")
                 .arg(distanceThreshold).arg(confidenceThreshold);
     
     // Filter matches
@@ -326,7 +326,7 @@ QVector<EnhancedStarMatch> EnhancedStarMatcher::performGeometricValidation(
         }
     }
     
-    qDebug() << QString("Best transform: scale=%.3f, rotation=%.1f°, inliers=%1/%2")
+    qDebug() << QString("Best transform: scale=%1, rotation=%2°, inliers=%3/%4")
                 .arg(bestTransform.scale)
                 .arg(bestTransform.rotation * 180.0 / M_PI)
                 .arg(bestTransform.inlierCount)
@@ -414,7 +414,7 @@ bool StarCatalogValidator::calibrateDistortionModel(const EnhancedValidationResu
         m_radialDistortionK1 = k1;
         m_hasDistortionModel = true;
         
-        qDebug() << QString("Calibrated radial distortion: k1 = %.2e")
+        qDebug() << QString("Calibrated radial distortion: k1 = %1")
                     .arg(k1);
         
         return true;
@@ -454,7 +454,7 @@ void debugPixelMatching(const QVector<QPoint>& detectedStars,
             } else {
                 badMatches++;
                 if (distance <= pixelTolerance) {
-                    qDebug() << QString("⚠️  Match %1->%2: distance=%.2f px (within tolerance but marked bad)")
+                    qDebug() << QString("⚠️  Match %1->%2: distance=%3 px (within tolerance but marked bad)")
                                 .arg(match.detectedIndex).arg(match.catalogIndex).arg(distance);
                 }
             }
@@ -467,7 +467,7 @@ void debugPixelMatching(const QVector<QPoint>& detectedStars,
         double minDist = allDistances.first();
         double maxDist = allDistances.last();
         
-        qDebug() << QString("Distance statistics: min=%.2f, median=%.2f, max=%.2f px")
+        qDebug() << QString("Distance statistics: min=%1, median=%2, max=%3 px")
                     .arg(minDist).arg(medianDist).arg(maxDist);
         qDebug() << QString("Good matches: %1, Bad matches: %2").arg(goodMatches).arg(badMatches);
         
@@ -475,7 +475,7 @@ void debugPixelMatching(const QVector<QPoint>& detectedStars,
         int withinTolerance = std::count_if(allDistances.begin(), allDistances.end(),
             [pixelTolerance](double d) { return d <= pixelTolerance; });
         
-        qDebug() << QString("Matches within tolerance: %1/%2 (%.1f%%)")
+        qDebug() << QString("Matches within tolerance: %1/%2 (%3%%)")
                     .arg(withinTolerance).arg(allDistances.size())
                     .arg(100.0 * withinTolerance / allDistances.size());
         
@@ -507,7 +507,7 @@ void debugPixelMatching(const QVector<QPoint>& detectedStars,
         double avgDy = sumDy / offsetCount;
         double avgOffset = sqrt(avgDx * avgDx + avgDy * avgDy);
         
-        qDebug() << QString("Systematic offset: dx=%.2f, dy=%.2f px (magnitude=%.2f px)")
+        qDebug() << QString("Systematic offset: dx=%1, dy=%2 px (magnitude=%3 px)")
                     .arg(avgDx).arg(avgDy).arg(avgOffset);
         
         if (avgOffset > 2.0) {
@@ -607,16 +607,16 @@ EnhancedValidationResult EnhancedStarMatcher::matchStarsAdvanced(
         "================================\n"
         "Detected Stars: %1\n"
         "Catalog Stars: %2\n"
-        "High-Quality Matches: %3 (%.1f%%)\n"
-        "Geometric RMS: %.3f pixels\n"
-        "Photometric RMS: %.3f magnitudes\n"
-        "Astrometric Accuracy: %.3f arcsec\n"
-        "Scale Error: %.2f%%\n"
-        "Rotation Error: %.3f degrees\n"
-        "Matching Confidence: %.1f%%\n"
+        "High-Quality Matches: %3 (%4%%)\n"
+        "Geometric RMS: %5 pixels\n"
+        "Photometric RMS: %6 magnitudes\n"
+        "Astrometric Accuracy: %7 arcsec\n"
+        "Scale Error: %8%%\n"
+        "Rotation Error: %9 degrees\n"
+        "Matching Confidence: %10%%\n"
         "\nDistortion Analysis:\n"
-        "Max Radial Distortion: %.2f pixels\n"
-        "Distortion Model: %4")
+        "Max Radial Distortion: %11 pixels\n"
+        "Distortion Model: %12")
         .arg(result.totalDetected)
         .arg(result.totalCatalog)
         .arg(result.totalMatches)
@@ -635,7 +635,7 @@ EnhancedValidationResult EnhancedStarMatcher::matchStarsAdvanced(
     result.isValid = result.totalMatches >= m_params.minMatchesForValidation;
     
     qDebug() << "=== ENHANCED MATCHING COMPLETE ===";
-    qDebug() << QString("Final result: %1/%2 matches (%.1f%% confidence)")
+    qDebug() << QString("Final result: %1/%2 matches (%3%% confidence)")
                 .arg(result.totalMatches).arg(result.totalDetected)
                 .arg(result.matchingConfidence);
     
@@ -726,7 +726,7 @@ QVector<EnhancedStarMatch> EnhancedStarMatcher::performTriangleMatching(
     // Match triangle patterns
     auto triangleMatchPairs = matchTrianglePatterns(detectedTriangles, catalogTriangles);
     
-    qDebug() << QString("Found %1 triangle matches with confidence %.2f")
+    qDebug() << QString("Found %1 triangle matches with confidence %2")
                 .arg(triangleMatchPairs.first.size()).arg(triangleMatchPairs.second);
     
     // Convert triangle matches to star matches
@@ -957,7 +957,7 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
         params.useProperMotion = true;  // Apply proper motion to current epoch
         params.epochYear = 2025.5;     // Current epoch
         
-        qDebug() << QString("🔍 Searching Gaia GDR3: center=(%.4f°,%.4f°) radius=%.2f°")
+        qDebug() << QString("🔍 Searching Gaia GDR3: center=(%1°,%2°) radius=%3°")
 	  .arg(centerRA).arg(centerDec).arg(radiusDegrees);
         
         // Query the Gaia catalog
@@ -1004,7 +1004,7 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
         qDebug() << QString("   📊 Total stars retrieved: %1").arg(gaiaStars.size());
         qDebug() << QString("   📊 Stars in image bounds: %1").arg(starsInBounds);
         qDebug() << QString("   📊 Stars with BP/RP spectra: %1").arg(starsWithSpectra);
-        qDebug() << QString("   📊 Brightest star in field: mag %.2f").arg(brightestMag);
+        qDebug() << QString("   📊 Brightest star in field: mag %1").arg(brightestMag);
         
         // Add bright stars from our local database to fill in any gaps
         // (Gaia sometimes has issues with very bright stars due to saturation)
@@ -1200,7 +1200,7 @@ void StarCatalogValidator::showCatalogStats() const
     qDebug() << QString("Total stars: %1").arg(m_catalogStars.size());
     qDebug() << QString("Stars in image bounds: %1").arg(validStars);
     qDebug() << QString("Stars with BP/RP spectra: %1").arg(starsWithSpectra);
-    qDebug() << QString("Magnitude range: %.1f to %.1f").arg(brightestMag).arg(faintestMag);
+    qDebug() << QString("Magnitude range: %1 to %2").arg(brightestMag).arg(faintestMag);
     
     qDebug() << "Magnitude distribution:";
     for (auto it = magHistogram.begin(); it != magHistogram.end(); ++it) {
@@ -1215,7 +1215,7 @@ void StarCatalogValidator::showCatalogStats() const
         }
     }
     
-    qDebug() << QString("Data quality: Gaia GDR3 with proper motions applied to epoch %.1f")
+    qDebug() << QString("Data quality: Gaia GDR3 with proper motions applied to epoch %1")
                 .arg(2025.5);
 }
 
@@ -1782,11 +1782,11 @@ void StarCatalogValidator::calculateStatistics(ValidationResult& result) const
     
     // Generate summary
     result.summary = QString("Validation Results:\n"
-                           "Detected: %1, Catalog: %2, Matches: %3 (%.1f%%)\n"
-                           "Average position error: %.2f pixels\n"
-                           "RMS position error: %.2f pixels\n"
-                           "Unmatched detections: %4\n"
-                           "Unmatched catalog stars: %5")
+                           "Detected: %1, Catalog: %2, Matches: %3 (%4%%)\n"
+                           "Average position error: %5 pixels\n"
+                           "RMS position error: %6 pixels\n"
+                           "Unmatched detections: %7\n"
+                           "Unmatched catalog stars: %8")
                    .arg(result.totalDetected)
                    .arg(result.totalCatalog)
                    .arg(result.totalMatches)
@@ -2109,7 +2109,7 @@ void StarCatalogValidator::testAstrometricMetadata() const
                         .arg(testPixel.x, 0, 'f', 3).arg(testPixel.y, 0, 'f', 3);
             qDebug() << QString("  Round-trip: (%1, %2)")
                         .arg(backToPixel.x, 0, 'f', 3).arg(backToPixel.y, 0, 'f', 3);
-            qDebug() << QString("  Error: %.6f pixels %1")
+            qDebug() << QString("  Error: %1 pixels %2")
                         .arg(totalError).arg(totalError < 0.1 ? "✅" : "⚠️");
         }
         
@@ -2235,7 +2235,7 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
             if (ra_diff < 0.01 && dec_diff < 0.01) { // Same star (within 0.01 degrees)
                 // Replace if our magnitude is more reasonable (bright stars should have mag < 6)
                 if (existing.magnitude > 6.0 && brightStar.magnitude < 6.0) {
-                    qDebug() << QString("  🔄 Replacing %1: bad mag %.2f -> correct mag %.2f")
+                    qDebug() << QString("  🔄 Replacing %1: bad mag %2 -> correct mag %3")
                                 .arg(brightStar.name).arg(existing.magnitude).arg(brightStar.magnitude);
                     m_catalogStars[i] = catalogStar;
                     replaced = true;
@@ -2249,7 +2249,7 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
             m_catalogStars.append(catalogStar);
             addedCount++;
             
-            qDebug() << QString("  ✅ Added %1 (%2): mag %.2f -> pixel (%.0f, %.0f) %3")
+            qDebug() << QString("  ✅ Added %1 (%2): mag %3 -> pixel (%4, %5) %6")
                         .arg(brightStar.name).arg(brightStar.constellation).arg(brightStar.magnitude)
                         .arg(catalogStar.pixelPos.x()).arg(catalogStar.pixelPos.y())
                         .arg(catalogStar.isValid ? "✅" : "❌");
