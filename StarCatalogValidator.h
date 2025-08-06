@@ -341,7 +341,29 @@ public:
     QString getValidationSummary() const;
     QJsonObject exportValidationResults() const;
     void clearResults();
-    
+    void showWCSInfoFromPCL();
+    void extractAndDisplayCDMatrix();
+    void calculateAndDisplayFOV();
+    void performWCSQualityCheck()    ;
+    void displayPCLSpecificInfo();
+    void showBasicWCSInfoFromPCL();
+  double getPixScale()
+  {
+    return m_astrometricMetadata.Resolution() * 3600.0; // arcsec/px
+  }
+    bool getCenter(double &x, double &y)
+    {
+      pcl::DPoint centerCoords;
+      if (m_astrometricMetadata.ImageCenterToCelestial(centerCoords)) {
+	x = centerCoords.x;
+	y = centerCoords.y;
+	return true;
+      }
+      return false;
+    }
+    int getWidth() { return m_astrometricMetadata.Width(); }
+    int getHeight() { return m_astrometricMetadata.Height(); }
+  
 signals:
     void catalogQueryStarted();
     void catalogQueryFinished(bool success, const QString& message);
@@ -378,7 +400,7 @@ private:
   //    double m_magnitudeLimit;
     
     // Data
-    WCSData m_wcsData;
+  //    WCSData m_wcsData;
     QVector<CatalogStar> m_catalogStars;
     ValidationResult m_lastValidation;
     

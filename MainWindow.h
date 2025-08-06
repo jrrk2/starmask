@@ -118,7 +118,7 @@ private:
     QGroupBox* m_plottingGroup;           // NEW: Plotting controls group
     QVBoxLayout* m_plottingLayout;        // NEW: Plotting layout
   //    QDoubleSpinBox* m_plotMagnitudeSpin;  // NEW: Magnitude limit for plotting
-    QDoubleSpinBox* m_fieldRadiusSpin;    // NEW: Field radius control
+  //    QDoubleSpinBox* m_fieldRadiusSpin;    // NEW: Field radius control
     
     QComboBox* m_validationModeCombo;
   //    QSpinBox* m_magnitudeLimitSpin;

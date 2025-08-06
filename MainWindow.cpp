@@ -113,50 +113,10 @@ void MainWindow::showWCSDebugInfo()
         QMessageBox::information(this, "WCS Debug", "No WCS information available.");
         return;
     }
+
+    QString wcsInfo = QString("TBD");
     
-    WCSData wcs = m_catalogValidator->getWCSData();
-    
-    QString wcsInfo = QString(
-        "WCS DEBUG INFORMATION\n"
-        "====================\n\n"
-        "Basic WCS Parameters:\n"
-        "CRVAL1 (RA center): %1°\n"
-        "CRVAL2 (Dec center): %2°\n"
-        "CRPIX1 (X reference): %3 px\n"
-        "CRPIX2 (Y reference): %4 px\n"
-        "Pixel scale: %5 arcsec/px\n"
-        "Orientation: %6°\n"
-        "Image size: %7 × %8 px\n\n"
-        "CD Matrix:\n"
-        "CD1_1: %9\n"
-        "CD1_2: %10\n"
-        "CD2_1: %11\n"
-        "CD2_2: %12\n\n"
-        "Calculated Field of View:\n"
-        "Width: %13 arcmin\n"
-        "Height: %14 arcmin\n"
-        "Diagonal: %15 arcmin\n\n"
-        "WCS Quality Check:\n"
-        "Is Valid: %16\n"
-        "Determinant: %17\n"
-        "Scale consistency: %18")
-        .arg(wcs.crval1, 0, 'f', 6)
-        .arg(wcs.crval2, 0, 'f', 6)
-        .arg(wcs.crpix1, 0, 'f', 2)
-        .arg(wcs.crpix2, 0, 'f', 2)
-        .arg(wcs.pixscale, 0, 'f', 2)
-        .arg(wcs.orientation, 0, 'f', 2)
-        .arg(wcs.width).arg(wcs.height)
-        .arg(wcs.cd11, 0, 'e', 6)
-        .arg(wcs.cd12, 0, 'e', 6)
-        .arg(wcs.cd21, 0, 'e', 6)
-        .arg(wcs.cd22, 0, 'e', 6)
-        .arg(wcs.width * wcs.pixscale / 60.0, 0, 'f', 1)
-        .arg(wcs.height * wcs.pixscale / 60.0, 0, 'f', 1)
-        .arg(sqrt(wcs.width*wcs.width + wcs.height*wcs.height) * wcs.pixscale / 60.0, 0, 'f', 1)
-        .arg(wcs.isValid ? "Yes" : "No")
-        .arg(wcs.cd11 * wcs.cd22 - wcs.cd12 * wcs.cd21, 0, 'e', 6)
-        .arg(sqrt(wcs.cd11*wcs.cd11 + wcs.cd21*wcs.cd21) * 3600.0, 0, 'f', 2);
+    m_catalogValidator->showWCSInfoFromPCL();
     
     QDialog* wcsDialog = new QDialog(this);
     wcsDialog->setWindowTitle("WCS Debug Information");
@@ -188,9 +148,8 @@ void MainWindow::testWCSTransformations()
     qDebug() << "\n🔍 TESTING WCS TRANSFORMATIONS";
     
     // Test center transformation
-    WCSData wcs = m_catalogValidator->getWCSData();
-    double centerX = wcs.width * 0.5;
-    double centerY = wcs.height * 0.5;
+    double centerX = m_catalogValidator->getWidth() * 0.5;
+    double centerY = m_catalogValidator->getHeight() * 0.5;
     
     QPointF centerSky = m_catalogValidator->pixelToSky(centerX, centerY);
     QPointF centerPixelRoundTrip = m_catalogValidator->skyToPixel(centerSky.x(), centerSky.y());
@@ -207,9 +166,9 @@ void MainWindow::testWCSTransformations()
     // Test corners
     QVector<QPointF> testPoints = {
         QPointF(0, 0),                    // Top-left
-        QPointF(wcs.width, 0),           // Top-right  
-        QPointF(0, wcs.height),          // Bottom-left
-        QPointF(wcs.width, wcs.height)   // Bottom-right
+        QPointF(m_catalogValidator->getWidth(), 0),           // Top-right  
+        QPointF(0, m_catalogValidator->getHeight()),          // Bottom-left
+        QPointF(m_catalogValidator->getWidth(), m_catalogValidator->getHeight())   // Bottom-right
     };
     
     QStringList cornerNames = {"Top-left", "Top-right", "Bottom-left", "Bottom-right"};
@@ -1319,13 +1278,14 @@ void MainWindow::setupCatalogMenu()
     
     QAction* testQueryAction = catalogMenu->addAction("Test Gaia query");
     connect(testQueryAction, &QAction::triggered, [this]() {
-        if (m_hasWCS) {
-            WCSData wcs = m_catalogValidator->getWCSData();
+      double crval1, crval2;
+      if (m_hasWCS && m_catalogValidator->getCenter(crval1, crval2)) {
+	    
             qDebug() << "\n=== TESTING GAIA GDR3 QUERY ===";
-            qDebug() << QString("Image center: RA=%1° Dec=%2°").arg(wcs.crval1).arg(wcs.crval2);
+            qDebug() << QString("Image center: RA=%1° Dec=%2°").arg(crval1).arg(crval2);
             
             auto start = QTime::currentTime();
-            m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, 1.0); // 1 degree radius test
+            m_catalogValidator->queryCatalog(crval1, crval2, 1.0); // 1 degree radius test
             auto elapsed = start.msecsTo(QTime::currentTime());
             
             qDebug() << QString("Query completed in %1ms").arg(elapsed);
@@ -1338,12 +1298,15 @@ void MainWindow::setupCatalogMenu()
     
     QAction* findBrightAction = catalogMenu->addAction("Find brightest stars in field");
     connect(findBrightAction, &QAction::triggered, [this]() {
-        if (m_hasWCS) {
-            WCSData wcs = m_catalogValidator->getWCSData();
-            double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+      double crval1, crval2;
+      if (m_hasWCS && m_catalogValidator->getCenter(crval1, crval2)) {
+	  int width =  m_catalogValidator->getWidth();
+	  int height = m_catalogValidator->getHeight();
+	  double pixscale = m_catalogValidator->getPixScale();
+            double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
             fieldRadius = std::max(fieldRadius, 0.5);
             
-            m_catalogValidator->findBrightGaiaStars(wcs.crval1, wcs.crval2, fieldRadius, 20);
+            m_catalogValidator->findBrightGaiaStars(crval1, crval2, fieldRadius, 20);
         } else {
             QMessageBox::information(this, "Bright Stars", "Load an image with WCS first");
         }
@@ -1351,12 +1314,15 @@ void MainWindow::setupCatalogMenu()
     
     QAction* findSpectraAction = catalogMenu->addAction("Find stars with BP/RP spectra");
     connect(findSpectraAction, &QAction::triggered, [this]() {
-        if (m_hasWCS) {
-            WCSData wcs = m_catalogValidator->getWCSData();
-            double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+      double crval1, crval2;
+      if (m_hasWCS && m_catalogValidator->getCenter(crval1, crval2)) {
+	  int width =  m_catalogValidator->getWidth();
+	  int height = m_catalogValidator->getHeight();
+	  double pixscale = m_catalogValidator->getPixScale();
+            double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
             fieldRadius = std::max(fieldRadius, 0.5);
             
-            m_catalogValidator->queryGaiaWithSpectra(wcs.crval1, wcs.crval2, fieldRadius);
+            m_catalogValidator->queryGaiaWithSpectra(crval1, crval2, fieldRadius);
         } else {
             QMessageBox::information(this, "Spectral Stars", "Load an image with WCS first");
         }
@@ -1411,13 +1377,14 @@ void MainWindow::testGaiaPerformance()
         QMessageBox::information(this, "Performance Test", "Load an image with WCS first");
         return;
     }
-    
-    WCSData wcs = m_catalogValidator->getWCSData();
+    double crval1, crval2;
+    m_catalogValidator->getCenter(crval1, crval2);
+   
     double testRadius = 2.0; // 2 degree radius for performance test
     
     qDebug() << "\n=== GAIA GDR3 PERFORMANCE COMPARISON ===";
     qDebug() << QString("Test query: RA=%1° Dec=%2° radius=%3°")
-                .arg(wcs.crval1).arg(wcs.crval2).arg(testRadius);
+                .arg(crval1).arg(crval2).arg(testRadius);
     
     // Test different magnitude limits
     QVector<double> magLimits = {12.0, 15.0, 18.0, 20.0};
@@ -1425,7 +1392,7 @@ void MainWindow::testGaiaPerformance()
     for (double magLimit : magLimits) {
         auto start = QTime::currentTime();
         
-        GaiaGDR3Catalog::SearchParameters params(wcs.crval1, wcs.crval2, testRadius, magLimit);
+        GaiaGDR3Catalog::SearchParameters params(crval1, crval2, testRadius, magLimit);
         auto stars = GaiaGDR3Catalog::queryRegion(params);
         
         auto elapsed = start.msecsTo(QTime::currentTime());
@@ -1437,7 +1404,7 @@ void MainWindow::testGaiaPerformance()
     
     // Test spectrum search
     auto start = QTime::currentTime();
-    auto specStars = GaiaGDR3Catalog::findStarsWithSpectra(wcs.crval1, wcs.crval2, testRadius, 15.0);
+    auto specStars = GaiaGDR3Catalog::findStarsWithSpectra(crval1, crval2, testRadius, 15.0);
     auto elapsed = start.msecsTo(QTime::currentTime());
     
     qDebug() << QString("🌈 BP/RP spectra search: %1 stars in %2ms")
@@ -1770,12 +1737,14 @@ MainWindow::MainWindow(QWidget* parent)
     // Connect validation control signals
     connect(m_validationModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onValidationModeChanged);
-    connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    /*
+      connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [this](double) {
                 m_catalogQueried = false;
                 m_catalogPlotted = false;
                 updatePlottingControls();
             });
+    */
     
     // Connect catalog validator signals
     connect(m_catalogValidator.get(), &StarCatalogValidator::catalogQueryStarted,
@@ -1817,7 +1786,6 @@ void MainWindow::setupCatalogPlottingControls()
     m_plotMagnitudeSpin->setSuffix(" mag");
     plotMagLayout->addWidget(m_plotMagnitudeSpin);
     m_plottingLayout->addLayout(plotMagLayout);
-    */
     // Field radius
     QHBoxLayout* radiusLayout = new QHBoxLayout;
     radiusLayout->addWidget(new QLabel("Field Radius:"));
@@ -1829,6 +1797,7 @@ void MainWindow::setupCatalogPlottingControls()
     m_fieldRadiusSpin->setToolTip("Search radius around image center");
     radiusLayout->addWidget(m_fieldRadiusSpin);
     m_plottingLayout->addLayout(radiusLayout);
+    */
     
     // Initially hide plotting controls
     m_plottingGroup->setVisible(false);
@@ -1856,15 +1825,21 @@ void MainWindow::onDebugStarCorrelation()
 
 void MainWindow::plotCatalogStarsDirectly()
 {
+  double crval1, crval2;
+  m_catalogValidator->getCenter(crval1, crval2);
+ 
     if (!m_catalogQueried) {
         // Need to query catalog first
-        WCSData wcs = m_catalogValidator->getWCSData();
-        double fieldRadius = m_fieldRadiusSpin->value();
+      int width =  m_catalogValidator->getWidth();
+      int height = m_catalogValidator->getHeight();
+      double pixscale = m_catalogValidator->getPixScale();
+      double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
+      fieldRadius = std::max(fieldRadius, 0.5);
         
         // Set magnitude limit from plotting controls
 	//        m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
         
-        m_catalogValidator->queryCatalog(wcs.crval1, wcs.crval2, fieldRadius);
+        m_catalogValidator->queryCatalog(crval1, crval2, fieldRadius);
     }
 
     // Catalog already queried, just display it
@@ -1945,16 +1920,17 @@ void MainWindow::extractWCSFromImage()
     
     // Use PCL's native WCS parsing instead of custom parsing
     m_hasWCS = m_catalogValidator->setWCSFromImageMetadata(*m_imageData);
+    double crval1, crval2, pixscale = m_catalogValidator->getPixScale() ;
+    m_catalogValidator->getCenter(crval1, crval2);
     
     // Update WCS status display
     QLabel* wcsLabel = findChild<QLabel*>("wcsStatusLabel");
     if (wcsLabel) {
         if (m_hasWCS) {
-            WCSData wcs = m_catalogValidator->getWCSData();
             wcsLabel->setText(QString("WCS Status: Available (PCL)\nRA: %1°, Dec: %2°\nPixel Scale: %3 arcsec/px")
-                            .arg(wcs.crval1, 0, 'f', 4)
-                            .arg(wcs.crval2, 0, 'f', 4)
-                            .arg(wcs.pixscale, 0, 'f', 2));
+                            .arg(crval1, 0, 'f', 4)
+                            .arg(crval2, 0, 'f', 4)
+                            .arg(pixscale, 0, 'f', 2));
             wcsLabel->setStyleSheet("QLabel { color: green; font-weight: bold; }");
         } else {
             wcsLabel->setText("WCS Status: Failed (PCL)");
@@ -2041,12 +2017,16 @@ void MainWindow::onCatalogQueryFinished(bool success, const QString& message)
     if (success) {
         m_catalogQueried = true;
         
-        // Add bright stars from local database (this always works!)
-        WCSData wcs = m_catalogValidator->getWCSData();
-        double fieldRadius = sqrt(wcs.width * wcs.width + wcs.height * wcs.height) * wcs.pixscale / 3600.0 / 2.0;
+	double crval1, crval2;
+	m_catalogValidator->getCenter(crval1, crval2);
+	int width =  m_catalogValidator->getWidth();
+	int height = m_catalogValidator->getHeight();
+	double pixscale = m_catalogValidator->getPixScale();
+        double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
         fieldRadius = std::max(fieldRadius, 0.5);
         
-        m_catalogValidator->addBrightStarsFromDatabase(wcs.crval1, wcs.crval2, fieldRadius);
+        // Add bright stars from local database (this always works!)
+        m_catalogValidator->addBrightStarsFromDatabase(crval1, crval2, fieldRadius);
         
         m_statusLabel->setText(QString("Retrieved %1 catalog stars (including bright stars)")
                                .arg(m_catalogValidator->getCatalogStars().size()));

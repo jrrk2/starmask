@@ -377,7 +377,7 @@ bool StarCatalogValidator::calibrateDistortionModel(const EnhancedValidationResu
     qDebug() << "Calibrating distortion model from" << result.enhancedMatches.size() << "matches";
     
     // Calculate image center
-    QPointF imageCenter(m_wcsData.width * 0.5, m_wcsData.height * 0.5);
+    QPointF imageCenter(m_astrometricMetadata.Width() * 0.5, m_astrometricMetadata.Height() * 0.5);
     
     // Collect residuals and radial distances
     QVector<double> radii, radialResiduals, tangentialResiduals;
@@ -953,9 +953,9 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
         params.centerDec = centerDec;
         params.radiusDegrees = radiusDegrees;
         params.maxMagnitude = 17.0;
-        params.maxResults = 10000;
+        params.maxResults = 200000;
         params.useProperMotion = true;  // Apply proper motion to current epoch
-        params.epochYear = 2025.5;     // Current epoch
+        params.epochYear = 2000.0;     // Current epoch
         
         qDebug() << QString("🔍 Searching Gaia GDR3: center=(%1°,%2°) radius=%3°")
 	  .arg(centerRA).arg(centerDec).arg(radiusDegrees);
@@ -984,9 +984,9 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
             
             // Check if star is within image bounds
             catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
-                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.x() < m_astrometricMetadata.Width() && 
                                   catalogStar.pixelPos.y() >= 0 && 
-                                  catalogStar.pixelPos.y() < m_wcsData.height);
+                                  catalogStar.pixelPos.y() < m_astrometricMetadata.Height());
             
             if (catalogStar.isValid) {
                 starsInBounds++;
@@ -1058,7 +1058,7 @@ void StarCatalogValidator::initializeGaiaDR3()
 // Update the main queryCatalog method to use Gaia
 void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
 {
-    if (!m_wcsData.isValid) {
+    if (!m_hasAstrometricData) {
         emit errorSignal("No valid WCS data available for catalog query");
         return;
     }
@@ -1094,9 +1094,9 @@ void StarCatalogValidator::queryGaiaWithSpectra(double centerRA, double centerDe
             catalogStar.spectralType = gaiaStar.spectralClass + " (BP/RP)";
             catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
             catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
-                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.x() < m_astrometricMetadata.Width() && 
                                   catalogStar.pixelPos.y() >= 0 && 
-                                  catalogStar.pixelPos.y() < m_wcsData.height);
+                                  catalogStar.pixelPos.y() < m_astrometricMetadata.Height());
             
             m_catalogStars.append(catalogStar);
         }
@@ -1139,9 +1139,9 @@ void StarCatalogValidator::findBrightGaiaStars(double centerRA, double centerDec
             catalogStar.spectralType = gaiaStar.spectralClass;
             catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
             catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && 
-                                  catalogStar.pixelPos.x() < m_wcsData.width && 
+                                  catalogStar.pixelPos.x() < m_astrometricMetadata.Width() && 
                                   catalogStar.pixelPos.y() >= 0 && 
-                                  catalogStar.pixelPos.y() < m_wcsData.height);
+                                  catalogStar.pixelPos.y() < m_astrometricMetadata.Height());
             
             m_catalogStars.append(catalogStar);
         }
@@ -1282,7 +1282,7 @@ void StarCatalogValidator::setMagnitudeLimit(double faintestMagnitude)
     m_magnitudeLimit = faintestMagnitude;
     qDebug() << "Magnitude limit set to:" << faintestMagnitude;
 }
-*/
+
 bool StarCatalogValidator::setWCSData(const WCSData& wcs)
 {
     m_wcsData = wcs;
@@ -1469,7 +1469,7 @@ void StarCatalogValidator::setWCSFromMetadata(const QStringList& metadata)
 
 void StarCatalogValidator::updateWCSMatrix()
 {
-    if (!m_wcsData.isValid) {
+    if (!m_hasAstrometricData) {
         m_wcsMatrixValid = false;
         return;
     }
@@ -1489,7 +1489,7 @@ void StarCatalogValidator::updateWCSMatrix()
         qDebug() << "Warning: WCS transformation matrix is singular";
     }
 }
-
+*/
 // Callback to collect HTTP response
 static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -1498,7 +1498,7 @@ static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* use
 
 void StarCatalogValidator::queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees)
 {
-    if (!m_wcsData.isValid) {
+    if (!m_hasAstrometricData) {
         emit errorSignal("No valid WCS data available for catalog query");
         return;
     }
@@ -1571,7 +1571,7 @@ void StarCatalogValidator::parseCatalogResponse(const QByteArray& data)
         star.pixelPos = skyToPixel(star.ra, star.dec);
         // Mark as invalid if outside image bounds
         if (star.pixelPos.x() < 0 || star.pixelPos.y() < 0 ||
-            star.pixelPos.x() >= m_wcsData.width || star.pixelPos.y() >= m_wcsData.height) {
+            star.pixelPos.x() >= m_astrometricMetadata.Width() || star.pixelPos.y() >= m_astrometricMetadata.Height()) {
             star.isValid = false;
         }
     }
@@ -1632,7 +1632,7 @@ double StarCatalogValidator::parseCoordinate(const QString& coordStr, bool isRA)
 ValidationResult StarCatalogValidator::validateStars(const QVector<QPoint>& detectedStars, 
                                                    const QVector<float>& starRadii)
 {
-    if (!m_wcsData.isValid) {
+    if (!m_hasAstrometricData) {
         ValidationResult result;
         result.summary = "No valid WCS data available";
         emit errorSignal(result.summary);
@@ -1950,34 +1950,17 @@ bool StarCatalogValidator::setWCSFromImageMetadata(const ImageData& imageData)
             m_hasAstrometricData = m_astrometricMetadata.IsValid();
             
             if (m_hasAstrometricData) {
-                // Update our WCSData for compatibility with existing code
-                pcl::DPoint centerWorld;
-                if (m_astrometricMetadata.ImageToCelestial(centerWorld, 
-                    pcl::DPoint(imageData.width * 0.5, imageData.height * 0.5))) {
-                    
-                    m_wcsData.crval1 = centerWorld.x;
-                    m_wcsData.crval2 = centerWorld.y;
-                    m_wcsData.width = imageData.width;
-                    m_wcsData.height = imageData.height;
-                    m_wcsData.isValid = true;
-                    
-                    // Get resolution from PCL
-                    m_wcsData.pixscale = m_astrometricMetadata.Resolution() * 3600.0; // arcsec/pixel
-                    
                     qDebug() << "✅ PCL AstrometricMetadata setup successful!";
-                    qDebug() << "  Image center: RA=" << centerWorld.x << "° Dec=" << centerWorld.y << "°";
-                    qDebug() << "  Resolution:" << m_wcsData.pixscale << "arcsec/pixel";
-                    qDebug() << "  Image size:" << imageData.width << "x" << imageData.height;
+//                  qDebug() << "  Image center: RA=" << centerWorld.x << "° Dec=" << centerWorld.y << "°";
+                    qDebug() << "  Resolution:" << getPixScale() << "arcsec/pixel";
+                    qDebug() << "  Image size:"
+			     << m_astrometricMetadata.Width() << "x"
+			     << m_astrometricMetadata.Height();
                     
                     // Test the coordinate transformations
                     testAstrometricMetadata();
                     
                     return true;
-                    
-                } else {
-                    qDebug() << "❌ ImageToCelestial failed for image center";
-                    m_hasAstrometricData = false;
-                }
             } else {
                 qDebug() << "❌ PCL AstrometricMetadata.IsValid() returned false";
                 
@@ -2013,7 +1996,7 @@ void StarCatalogValidator::testAstrometricMetadata() const
     
     try {
         // Test 1: Image center
-        pcl::DPoint centerImage(m_wcsData.width * 0.5, m_wcsData.height * 0.5);
+        pcl::DPoint centerImage(m_astrometricMetadata.Width() * 0.5, m_astrometricMetadata.Height() * 0.5);
         pcl::DPoint centerWorld;
         
         if (m_astrometricMetadata.ImageToCelestial(centerWorld, centerImage)) {
@@ -2032,9 +2015,9 @@ void StarCatalogValidator::testAstrometricMetadata() const
         
         TestPoint corners[] = {
             {pcl::DPoint(0, 0), "Top-Left"},
-            {pcl::DPoint(m_wcsData.width, 0), "Top-Right"},
-            {pcl::DPoint(0, m_wcsData.height), "Bottom-Left"},
-            {pcl::DPoint(m_wcsData.width, m_wcsData.height), "Bottom-Right"}
+            {pcl::DPoint(m_astrometricMetadata.Width(), 0), "Top-Right"},
+            {pcl::DPoint(0, m_astrometricMetadata.Height()), "Bottom-Left"},
+            {pcl::DPoint(m_astrometricMetadata.Width(), m_astrometricMetadata.Height()), "Bottom-Right"}
         };
         
         qDebug() << "\nImage corner transformations:";
@@ -2070,8 +2053,8 @@ void StarCatalogValidator::testAstrometricMetadata() const
             pcl::DPoint imageCoord;
             
             if (m_astrometricMetadata.CelestialToImage(imageCoord, worldCoord)) {
-                bool inBounds = (imageCoord.x >= 0 && imageCoord.x < m_wcsData.width && 
-                               imageCoord.y >= 0 && imageCoord.y < m_wcsData.height);
+                bool inBounds = (imageCoord.x >= 0 && imageCoord.x < m_astrometricMetadata.Width() && 
+                               imageCoord.y >= 0 && imageCoord.y < m_astrometricMetadata.Height());
                 if (inBounds) inBoundsCount++;
                 
                 qDebug() << QString("  %1: RA=%2° Dec=%3° -> pixel=(%4,%5) %6")
@@ -2095,7 +2078,7 @@ void StarCatalogValidator::testAstrometricMetadata() const
         
         // Test 4: Round-trip accuracy test
         qDebug() << "\nRound-trip accuracy test:";
-        pcl::DPoint testPixel(m_wcsData.width * 0.25, m_wcsData.height * 0.75);
+        pcl::DPoint testPixel(m_astrometricMetadata.Width() * 0.25, m_astrometricMetadata.Height() * 0.75);
         pcl::DPoint worldCoord, backToPixel;
         
         if (m_astrometricMetadata.ImageToCelestial(worldCoord, testPixel) &&
@@ -2187,12 +2170,12 @@ bool StarCatalogValidator::hasValidWCS() const
 { 
     return m_hasAstrometricData && m_astrometricMetadata.IsValid(); 
 }
-
+/*
 WCSData StarCatalogValidator::getWCSData() const 
 { 
     return m_wcsData; 
 }
-
+*/
 // Update StarCatalogValidator to use the local bright star database
 void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double centerDec, double radiusDegrees)
 {
@@ -2222,8 +2205,8 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
         catalogStar.pixelPos = skyToPixel(brightStar.ra, brightStar.dec);
         
         // Check if in image bounds
-        catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && catalogStar.pixelPos.x() < m_wcsData.width && 
-                              catalogStar.pixelPos.y() >= 0 && catalogStar.pixelPos.y() < m_wcsData.height);
+        catalogStar.isValid = (catalogStar.pixelPos.x() >= 0 && catalogStar.pixelPos.x() < m_astrometricMetadata.Width() && 
+                              catalogStar.pixelPos.y() >= 0 && catalogStar.pixelPos.y() < m_astrometricMetadata.Height());
         
         // Check if we already have a star at this position (replace if ours is better)
         bool replaced = false;
@@ -2268,4 +2251,279 @@ void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double ce
         
         qDebug() << QString("Total catalog now contains %1 stars").arg(m_catalogStars.size());
     }
+}
+
+// Direct WCS info extraction from PCL AstrometricMetadata
+
+void StarCatalogValidator::showWCSInfoFromPCL()
+{
+    qDebug() << "\n=== WCS INFO FROM PCL ASTROMETRICMETADATA ===";
+    
+    if (!m_hasAstrometricData || !m_astrometricMetadata.IsValid()) {
+        qDebug() << "❌ No valid astrometric metadata available";
+        return;
+    }
+    
+    qDebug() << "WCS DEBUG INFORMATION";
+    qDebug() << "====================";
+    qDebug() << "";
+    
+    // Basic WCS Parameters
+    qDebug() << "Basic WCS Parameters:";
+    
+    // Get image center coordinates
+    pcl::DPoint centerCoords;
+    if (m_astrometricMetadata.ImageCenterToCelestial(centerCoords)) {
+        qDebug() << QString("CRVAL1 (RA center): %1°").arg(centerCoords.x, 0, 'f', 6);
+        qDebug() << QString("CRVAL2 (Dec center): %1°").arg(centerCoords.y, 0, 'f', 6);
+    }
+    
+    // Reference pixel (usually image center for PCL)
+    double crpix1 = m_astrometricMetadata.Width() * 0.5;
+    double crpix2 = m_astrometricMetadata.Height() * 0.5;
+    qDebug() << QString("CRPIX1 (X reference): %1 px").arg(crpix1, 0, 'f', 2);
+    qDebug() << QString("CRPIX2 (Y reference): %1 px").arg(crpix2, 0, 'f', 2);
+    
+    // Pixel scale and orientation
+    double pixelScale = getPixScale();
+    qDebug() << QString("Pixel scale: %1 arcsec/px").arg(pixelScale, 0, 'f', 2);
+    
+    bool flipped;
+    double rotation = m_astrometricMetadata.Rotation(flipped);
+    qDebug() << QString("Orientation: %1°").arg(rotation, 0, 'f', 2);
+    
+    // Image dimensions
+    qDebug() << QString("Image size: %1 × %2 px")
+                .arg(m_astrometricMetadata.Width())
+                .arg(m_astrometricMetadata.Height());
+    
+    // CD Matrix (extracted via numerical differentiation)
+    qDebug() << "";
+    qDebug() << "CD Matrix:";
+    extractAndDisplayCDMatrix();
+    
+    // Field of View
+    qDebug() << "";
+    qDebug() << "Calculated Field of View:";
+    calculateAndDisplayFOV();
+    
+    // WCS Quality Check
+    qDebug() << "";
+    qDebug() << "WCS Quality Check:";
+    performWCSQualityCheck();
+    
+    // Additional PCL-specific information
+    qDebug() << "";
+    qDebug() << "PCL Astrometric Information:";
+    displayPCLSpecificInfo();
+}
+
+void StarCatalogValidator::extractAndDisplayCDMatrix()
+{
+    // Calculate CD matrix elements via numerical differentiation
+    double centerX = m_astrometricMetadata.Width() * 0.5;
+    double centerY = m_astrometricMetadata.Height() * 0.5;
+    double delta = 1.0; // 1 pixel offset
+    
+    pcl::DPoint center, right, up;
+    
+    if (m_astrometricMetadata.ImageToCelestial(center, pcl::DPoint(centerX, centerY)) &&
+        m_astrometricMetadata.ImageToCelestial(right,  pcl::DPoint(centerX + delta, centerY)) &&
+        m_astrometricMetadata.ImageToCelestial(up,     pcl::DPoint(centerX, centerY + delta))) {
+        
+        // Calculate CD matrix elements
+        double cd1_1 = (right.x - center.x) / delta;  // dRA/dX
+        double cd1_2 = (up.x - center.x) / delta;     // dRA/dY  
+        double cd2_1 = (right.y - center.y) / delta;  // dDec/dX
+        double cd2_2 = (up.y - center.y) / delta;     // dDec/dY
+        
+        // Handle RA wraparound near 0/360 boundary
+        if (abs(cd1_1) > 180) cd1_1 = cd1_1 > 0 ? cd1_1 - 360 : cd1_1 + 360;
+        if (abs(cd1_2) > 180) cd1_2 = cd1_2 > 0 ? cd1_2 - 360 : cd1_2 + 360;
+        
+        qDebug() << QString("CD1_1: %1").arg(cd1_1, 0, 'e', 6);
+        qDebug() << QString("CD1_2: %1").arg(cd1_2, 0, 'e', 6);
+        qDebug() << QString("CD2_1: %1").arg(cd2_1, 0, 'e', 6);
+        qDebug() << QString("CD2_2: %1").arg(cd2_2, 0, 'e', 6);
+        
+        // Calculate determinant for quality check
+        double determinant = cd1_1 * cd2_2 - cd1_2 * cd2_1;
+        qDebug() << QString("Determinant: %1").arg(determinant, 0, 'e', 6);
+        
+    } else {
+        qDebug() << "❌ Failed to calculate CD matrix elements";
+        qDebug() << "CD1_1: 0.000000e+00";
+        qDebug() << "CD1_2: 0.000000e+00";
+        qDebug() << "CD2_1: 0.000000e+00";
+        qDebug() << "CD2_2: 0.000000e+00";
+    }
+}
+
+void StarCatalogValidator::calculateAndDisplayFOV()
+{
+    try {
+        // Calculate field of view using PCL
+        double searchRadius = m_astrometricMetadata.SearchRadius(); // degrees
+        double diagonalFOV = searchRadius * 2.0; // degrees
+        
+        // Convert to arcminutes
+        double widthArcmin = m_astrometricMetadata.Width() * m_astrometricMetadata.Resolution() * 60.0;
+        double heightArcmin = m_astrometricMetadata.Height() * m_astrometricMetadata.Resolution() * 60.0;
+        double diagonalArcmin = diagonalFOV * 60.0;
+        
+        qDebug() << QString("Width: %1 arcmin").arg(widthArcmin, 0, 'f', 1);
+        qDebug() << QString("Height: %1 arcmin").arg(heightArcmin, 0, 'f', 1);
+        qDebug() << QString("Diagonal: %1 arcmin").arg(diagonalArcmin, 0, 'f', 1);
+        
+    } catch (...) {
+        // Fallback calculation
+        double pixelScaleDeg = m_astrometricMetadata.Resolution();
+        double widthDeg = m_astrometricMetadata.Width() * pixelScaleDeg;
+        double heightDeg = m_astrometricMetadata.Height() * pixelScaleDeg;
+        double diagonalDeg = sqrt(widthDeg*widthDeg + heightDeg*heightDeg);
+        
+        qDebug() << QString("Width: %1 arcmin").arg(widthDeg * 60.0, 0, 'f', 1);
+        qDebug() << QString("Height: %1 arcmin").arg(heightDeg * 60.0, 0, 'f', 1);
+        qDebug() << QString("Diagonal: %1 arcmin").arg(diagonalDeg * 60.0, 0, 'f', 1);
+    }
+}
+
+void StarCatalogValidator::performWCSQualityCheck()
+{
+    bool isValid = m_astrometricMetadata.IsValid();
+    qDebug() << QString("Is Valid: %1").arg(isValid ? "Yes" : "No");
+    
+    if (isValid) {
+        try {
+            // Test coordinate transformation accuracy
+            pcl::DPoint centerImage(m_astrometricMetadata.Width() * 0.5, 
+                                   m_astrometricMetadata.Height() * 0.5);
+            pcl::DPoint celestial, roundTripImage;
+            
+            if (m_astrometricMetadata.ImageToCelestial(celestial, centerImage) &&
+                m_astrometricMetadata.CelestialToImage(roundTripImage, celestial)) {
+                
+                double errorX = abs(roundTripImage.x - centerImage.x);
+                double errorY = abs(roundTripImage.y - centerImage.y);
+                double totalError = sqrt(errorX*errorX + errorY*errorY);
+                
+                qDebug() << QString("Round-trip error: %1 pixels").arg(totalError, 0, 'f', 6);
+                
+                if (totalError < 0.01) {
+                    qDebug() << "Scale consistency: Excellent";
+                } else if (totalError < 0.1) {
+                    qDebug() << "Scale consistency: Good";  
+                } else {
+                    qDebug() << "Scale consistency: Poor";
+                }
+            } else {
+                qDebug() << "Round-trip error: Failed to calculate";
+                qDebug() << "Scale consistency: Invalid";
+            }
+        } catch (...) {
+            qDebug() << "WCS quality check failed";
+        }
+    }
+}
+
+void StarCatalogValidator::displayPCLSpecificInfo()
+{
+    // Reference system
+    qDebug() << QString("Reference System: %1").arg(m_astrometricMetadata.ReferenceSystem().c_str());
+    
+    // Check if using spline-based transformation
+    if (m_astrometricMetadata.HasSplineWorldTransformation()) {
+        qDebug() << "Transformation Type: Spline-based (with distortion correction)";
+        
+        // Try to get spline information if available
+        const pcl::WorldTransformation* worldTransform = m_astrometricMetadata.WorldTransform();
+        if (worldTransform) {
+            const pcl::SplineWorldTransformation* splineTransform = 
+                dynamic_cast<const pcl::SplineWorldTransformation*>(worldTransform);
+            if (splineTransform) {
+                qDebug() << QString("Control Points: %1").arg(splineTransform->NumberOfControlPoints());
+                qDebug() << QString("RBF Type: %1").arg(splineTransform->RBFTypeName().c_str());
+                
+                int xWI, yWI, xIW, yIW;
+                splineTransform->GetSplineLengths(xWI, yWI, xIW, yIW);
+                qDebug() << QString("Spline Lengths: WI(%1,%2) IW(%3,%4)").arg(xWI).arg(yWI).arg(xIW).arg(yIW);
+                
+                double xWIErr, yWIErr, xIWErr, yIWErr;
+                splineTransform->GetSplineErrors(xWIErr, yWIErr, xIWErr, yIWErr);
+                qDebug() << QString("Spline Errors: WI(%.3f,%.3f) IW(%.3f,%.3f) px")
+                            .arg(xWIErr).arg(yWIErr).arg(xIWErr).arg(yIWErr);
+            }
+        }
+    } else {
+        qDebug() << "Transformation Type: Linear";
+    }
+    
+    // Resolution information
+    try {
+        double centerRes = m_astrometricMetadata.ResolutionAt(pcl::DPoint(
+            m_astrometricMetadata.Width() * 0.5, 
+            m_astrometricMetadata.Height() * 0.5));
+        qDebug() << QString("Resolution at center: %1 arcsec/px").arg(centerRes * 3600.0, 0, 'f', 3);
+    } catch (...) {
+        qDebug() << QString("Resolution (average): %1 arcsec/px")
+                    .arg(m_astrometricMetadata.Resolution() * 3600.0, 0, 'f', 3);
+    }
+    
+    // Search radius for catalog queries
+    try {
+        double searchRadius = m_astrometricMetadata.SearchRadius();
+        qDebug() << QString("Catalog search radius: %1°").arg(searchRadius, 0, 'f', 2);
+    } catch (...) {
+        qDebug() << "Catalog search radius: Not available";
+    }
+    
+    // Time information if available
+    auto obsTime = m_astrometricMetadata.ObservationMiddleTime();
+    if (obsTime.IsDefined()) {
+        qDebug() << QString("Observation time: %1").arg(obsTime().ToString().c_str());
+    }
+    
+    // Creator information if available
+    pcl::String creator = m_astrometricMetadata.CreatorApplication();
+    if (!creator.IsEmpty()) {
+        qDebug() << QString("Created by: %1").arg(creator.c_str());
+    }
+}
+
+// Alternative simpler version if you just want basic info
+void StarCatalogValidator::showBasicWCSInfoFromPCL()
+{
+    if (!m_hasAstrometricData || !m_astrometricMetadata.IsValid()) {
+        qDebug() << "No valid WCS information available";
+        return;
+    }
+    
+    qDebug() << "=== WCS INFORMATION ===";
+    
+    // Image center
+    pcl::DPoint center;
+    if (m_astrometricMetadata.ImageCenterToCelestial(center)) {
+        qDebug() << QString("Image Center: RA=%1° Dec=%2°").arg(center.x, 0, 'f', 6).arg(center.y, 0, 'f', 6);
+    }
+    
+    // Image properties
+    qDebug() << QString("Image Size: %1 × %2 pixels")
+                .arg(m_astrometricMetadata.Width()).arg(m_astrometricMetadata.Height());
+    
+    // Resolution
+    double resolution = m_astrometricMetadata.Resolution() * 3600.0;
+    qDebug() << QString("Pixel Scale: %1 arcsec/pixel").arg(resolution, 0, 'f', 2);
+    
+    // Field of view
+    double fovWidth = m_astrometricMetadata.Width() * resolution / 60.0;  // arcmin
+    double fovHeight = m_astrometricMetadata.Height() * resolution / 60.0; // arcmin
+    qDebug() << QString("Field of View: %1' × %2'").arg(fovWidth, 0, 'f', 1).arg(fovHeight, 0, 'f', 1);
+    
+    // Transformation type
+    qDebug() << QString("Coordinate System: %1 %2")
+                .arg(m_astrometricMetadata.ReferenceSystem().c_str())
+                .arg(m_astrometricMetadata.HasSplineWorldTransformation() ? "(Spline)" : "(Linear)");
+    
+    // Quality
+    qDebug() << QString("Status: %1").arg(m_astrometricMetadata.IsValid() ? "Valid" : "Invalid");
 }
