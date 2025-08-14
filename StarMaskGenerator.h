@@ -19,7 +19,7 @@ class StarMaskGenerator
 {
 public:
     // Main star detection method using PCL StarDetector
-    static StarMaskResult detectStars(const ImageData& imageData, float threshold = 0.5f);
+    static StarMaskResult detectStarsOld(const ImageData& imageData, float threshold = 0.5f);
     
     // Advanced star detection with custom parameters
     static StarMaskResult detectStarsAdvanced(const ImageData& imageData, 

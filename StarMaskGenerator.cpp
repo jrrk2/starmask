@@ -31,7 +31,7 @@ void StarMaskGenerator::validateStarDetection() {
              << QString::number(matchRate, 'f', 1) << "% match rate";
 }
 
-StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float threshold)
+StarMaskResult StarMaskGenerator::detectStarsOld(const ImageData& imageData, float threshold)
 {
     StarMaskResult result;
 
@@ -117,6 +117,7 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
         // Convert PCL stars to our format
         result.starCenters.reserve(stars.Length());
         result.starRadii.reserve(stars.Length());
+        result.starFluxes.reserve(stars.Length());
         result.starValid.reserve(stars.Length());
 
         // Calculate image statistics for radius estimation
@@ -146,6 +147,7 @@ StarMaskResult StarMaskGenerator::detectStars(const ImageData& imageData, float 
 
             result.starCenters.append(center);
             result.starRadii.append(starRadius);
+            result.starFluxes.append(star.flux);
             result.starValid.append(true);
 
             // Draw star in mask using the detection rectangle if available

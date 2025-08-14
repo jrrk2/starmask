@@ -207,8 +207,10 @@ private:
     
     void initializeSolver();
     void cleanupSolver();
+  /*
     QVector<DetectedStar> convertStarsFromMask(const QVector<QPoint>& starCenters,
                                                const QVector<float>& starFluxes);
+  */
 };
 
 // Convenience class for easy integration with MainWindow

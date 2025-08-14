@@ -14,6 +14,7 @@
 #include <pcl/api/APIDefs.h>
 
 void loginit(void);
+void logverbose(void);
 
 namespace pcl_mock {
 

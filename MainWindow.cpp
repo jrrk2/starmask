@@ -30,7 +30,6 @@ void MainWindow::initializePlatesolveIntegration()
 {
     // Initialize the plate solving integration
     m_platesolveIntegration = new ExtractStarsWithPlateSolve(this);
-    m_autoPlatesolveEnabled = false;
     m_platesolveProgressDialog = nullptr;
     
     // Default settings - adjust paths for your system
@@ -63,6 +62,8 @@ void MainWindow::initializePlatesolveIntegration()
         this, [this](const WCSData& wcs) {
             this->onWCSDataReceived(wcs);
         });
+
+    m_platesolveIntegration->setAutoSolveEnabled(true); // we assume this
     
 }
 
@@ -103,11 +104,6 @@ void MainWindow::onDetectStarsIntegratedVersion()
     QString statusText = QString("PCL StarDetector: %1 stars detected").arg(m_lastStarMask.starCenters.size());
     m_statusLabel->setText(statusText);
     
-    // If auto plate solve is enabled AND we have stars, trigger it
-    if (m_autoPlatesolveEnabled && !m_lastStarMask.starCenters.isEmpty()) {
-        triggerPlatesolveWithCurrentStars();
-    }
-    
     updateValidationControls();
 }
 
@@ -117,12 +113,14 @@ void MainWindow::onExtractStarsWithPlatesolve()
         QMessageBox::information(this, "Plate Solve", "No image loaded.");
         return;
     }
-    
+
+    /*    
     // Run star detection first if we don't have stars
     if (m_lastStarMask.starCenters.isEmpty()) {
         // Use your existing detection method
         onDetectStars(); // This calls your existing star detection
     }
+    */
     
     // Now trigger plate solving
     if (!m_lastStarMask.starCenters.isEmpty()) {
@@ -262,15 +260,6 @@ void MainWindow::onWCSDataReceived()
     updateStatusDisplay();
 }
 
-void MainWindow::onToggleAutoPlatesolve(bool enabled)
-{
-    m_autoPlatesolveEnabled = enabled;
-    m_platesolveIntegration->setAutoSolveEnabled(enabled);
-    
-    QString status = enabled ? "Auto plate solve enabled" : "Auto plate solve disabled";
-    m_statusLabel->setText(status);
-}
-
 void MainWindow::configurePlatesolverSettings()
 {
     PlatesolverSettingsDialog dialog(this);
@@ -311,14 +300,14 @@ void MainWindow::setupPlatesolveMenus()
     platesolveAction->setStatusTip("Extract stars and automatically solve plate");
     connect(platesolveAction, &QAction::triggered, this, &MainWindow::onExtractStarsWithPlatesolve);
     astrometryMenu->addAction(platesolveAction);
-    
+    /*    
     // Toggle auto solve
     QAction* autoSolveAction = new QAction("&Auto Plate Solve", this);
     autoSolveAction->setCheckable(true);
     autoSolveAction->setChecked(false);
     connect(autoSolveAction, &QAction::toggled, this, &MainWindow::onToggleAutoPlatesolve);
     astrometryMenu->addAction(autoSolveAction);
-    
+    */
     astrometryMenu->addSeparator();
     
     // Settings
@@ -1243,16 +1232,16 @@ void MainWindow::setupStarDetectionControls()
     QHBoxLayout* buttonLayout = new QHBoxLayout;
     m_detectAdvancedButton = new QPushButton("Detect Stars (Advanced)");
     m_detectAdvancedButton->setToolTip("Use PCL StarDetector with current parameters");
-    m_detectSimpleButton = new QPushButton("Detect Stars (Simple)");
-    m_detectSimpleButton->setToolTip("Use fallback simple detection algorithm");
+    //    m_detectSimpleButton = new QPushButton("Detect Stars (Simple)");
+    //    m_detectSimpleButton->setToolTip("Use fallback simple detection algorithm");
     
     buttonLayout->addWidget(m_detectAdvancedButton);
-    buttonLayout->addWidget(m_detectSimpleButton);
+    //    buttonLayout->addWidget(m_detectSimpleButton);
     m_starDetectionLayout->addLayout(buttonLayout);
     
     // Connect signals
     connect(m_detectAdvancedButton, &QPushButton::clicked, this, &MainWindow::onDetectStarsAdvanced);
-    connect(m_detectSimpleButton, &QPushButton::clicked, this, &MainWindow::onDetectStarsSimple);
+    //    connect(m_detectSimpleButton, &QPushButton::clicked, this, &MainWindow::onDetectStarsSimple);
     
     // Initially disable until image is loaded
     m_starDetectionGroup->setEnabled(false);
@@ -1328,6 +1317,7 @@ void MainWindow::onDetectStarsAdvanced()
     updateValidationControls();
 }
 
+/*
 // Add this method to handle simple star detection
 void MainWindow::onDetectStarsSimple()
 {
@@ -1366,6 +1356,7 @@ void MainWindow::onDetectStarsSimple()
     
     updateValidationControls();
 }
+*/
 
 // Update your existing setupUI() method to include the star detection controls
 void MainWindow::setupUI()
@@ -2043,6 +2034,7 @@ MainWindow::MainWindow(QWidget* parent)
     setupCatalogMenu();   // Add this line
     setupDebuggingMenu();
     initializePlatesolveIntegration();
+    addPlatesolvingTestButton();
     
     // Connect image reader signals
     connect(m_loadButton, &QPushButton::clicked, this, &MainWindow::onLoadImage);
@@ -2258,6 +2250,7 @@ void MainWindow::extractWCSFromImage()
     qDebug() << "PCL WCS extraction completed, valid:" << m_hasWCS;
 }
 
+/*
 void MainWindow::onDetectStars()
 {
     if (!m_imageReader->hasImage()) {
@@ -2283,6 +2276,7 @@ void MainWindow::onDetectStars()
     
     updateValidationControls();
 }
+*/
 
 void MainWindow::performValidation()
 {
@@ -2658,29 +2652,18 @@ void MainWindow::extractStarsIntegrated()
         QMessageBox::information(this, "Extract Stars", "No image loaded.");
         return;
     }
+
+    onDetectStarsAdvanced();
     
-    // Run your existing star extraction
-    StarMaskResult starMask = performStarExtraction(); // Your existing method
-    
-    if (starMask.starCenters.isEmpty()) {
+    if (m_lastStarMask.starCenters.isEmpty()) {
         QMessageBox::information(this, "Extract Stars", "No stars detected.");
         return;
     }
     
     // Update display with detected stars
-    updateStarDisplay(starMask);
+    updateStarDisplay(m_lastStarMask);
     
-    // If auto plate solve is enabled, trigger plate solving
-    if (m_autoPlatesolveEnabled) {
-        m_platesolveIntegration->extractStarsAndSolve(
-            m_imageData,
-            starMask.starCenters,
-            starMask.starFluxes,
-            starMask.starRadii
-        );
-    }
-    
-    qDebug() << "Extracted" << starMask.starCenters.size() << "stars";
+    qDebug() << "Extracted" << m_lastStarMask.starCenters.size() << "stars";
 }
 
 void MainWindow::showPlatesolveResults(const PlatesolveResult& result)
@@ -2835,9 +2818,7 @@ QString MainWindow::formatDecCoordinates(double dec)
            .arg(arcsec, 0, 'f', 1);
 }
 
-// MainWindow.cpp - Add these fixes to resolve compilation errors
-
-// 3. Add the missing performStarExtraction() method
+/*
 StarMaskResult MainWindow::performStarExtraction()
 {
     StarMaskResult result;
@@ -2853,6 +2834,7 @@ StarMaskResult MainWindow::performStarExtraction()
     qDebug() << "Star extraction completed:" << result.starCenters.size() << "stars found";
     return result;
 }
+*/
 
 // 4. Add the missing updateStarDisplay() method
 void MainWindow::updateStarDisplay(const StarMaskResult& starMask)
@@ -2973,5 +2955,111 @@ void MainWindow::onWCSDataReceived(const WCSData& wcs)
     
     if (m_statusLabel) {
         m_statusLabel->setText(statusMsg);
+    }
+}
+
+void MainWindow::onTestPlatesolveWithStarExtraction()
+{
+    extractStarsIntegrated();
+    
+    // Show extraction results
+    QString extractionInfo = QString("Star Extraction Results:\n"
+                                   "  Stars detected: %1\n"
+                                   "  Algorithm: %2\n\n"
+                                   "Starting plate solving...")
+                            .arg(m_lastStarMask.starCenters.size())
+                            .arg("Advanced star detection");
+    
+    m_resultsText->setPlainText(extractionInfo);
+    QApplication::processEvents();
+    
+    // Force plate solving even if auto-solve is disabled
+    if (m_platesolveIntegration) {
+        // Connect to result signals temporarily for this test
+        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveComplete,
+                this, &MainWindow::onTestPlatesolveComplete, Qt::UniqueConnection);
+        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveFailed,
+                this, &MainWindow::onTestPlateSolveFailed, Qt::UniqueConnection);
+        
+        // Trigger plate solving
+        m_platesolveIntegration->extractStarsAndSolve(
+            m_imageData,
+            m_lastStarMask.starCenters,
+            m_lastStarMask.starFluxes,
+            m_lastStarMask.starRadii
+        );
+        
+        m_statusLabel->setText(QString("Plate solving %1 detected stars...").arg(m_lastStarMask.starCenters.size()));
+    } else {
+        QMessageBox::warning(this, "Test Plate Solve", 
+                           "Plate solving integration not initialized.\n"
+                           "Please check your plate solver configuration.");
+    }
+}
+
+// Add these helper methods for the test results:
+void MainWindow::onTestPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs)
+{
+    Q_UNUSED(wcs)
+    
+    QString successMessage = QString(
+        "✅ PLATE SOLVING TEST SUCCESSFUL!\n\n"
+        "Results:\n"
+        "  RA Center:    %1° (%2)\n"
+        "  Dec Center:   %3° (%4)\n"
+        "  Pixel Scale:  %5 arcsec/px\n"
+        "  Orientation:  %6°\n"
+        "  Field Size:   %7' × %8'\n"
+        "  Matched Stars: %9\n"
+        "  Solve Time:   %10 sec\n\n"
+        "The star extraction and plate solving pipeline is working correctly!"
+    ).arg(result.ra_center, 0, 'f', 6)
+     .arg(formatRACoordinates(result.ra_center))
+     .arg(result.dec_center, 0, 'f', 6)
+     .arg(formatDecCoordinates(result.dec_center))
+     .arg(result.pixscale, 0, 'f', 3)
+     .arg(result.orientation, 0, 'f', 2)
+     .arg(result.fieldWidth, 0, 'f', 1)
+     .arg(result.fieldHeight, 0, 'f', 1)
+     .arg(result.matched_stars)
+     .arg(result.solve_time, 0, 'f', 1);
+    
+    m_resultsText->setPlainText(successMessage);
+    m_statusLabel->setText("Plate solving test completed successfully!");
+    
+    // Show results in a dialog for better visibility
+    QMessageBox::information(this, "Plate Solve Test Results", successMessage);
+}
+
+void MainWindow::onTestPlateSolveFailed(const QString& error)
+{
+    QString failureMessage = QString(
+        "❌ PLATE SOLVING TEST FAILED\n\n"
+        "Error: %1\n\n"
+        "Possible causes:\n"
+        "• Insufficient stars detected\n"
+        "• Poor star quality or distribution\n"
+        "• Incorrect scale parameters\n"
+        "• Missing or corrupted star catalog\n"
+        "• Network connectivity issues\n\n"
+        "Check your plate solver settings and try again."
+    ).arg(error);
+    
+    m_resultsText->setPlainText(failureMessage);
+    m_statusLabel->setText("Plate solving test failed. Check settings.");
+    
+    QMessageBox::warning(this, "Plate Solve Test Failed", failureMessage);
+}
+
+// Add the button to your UI setup (add this to your setupUI() method):
+void MainWindow::addPlatesolvingTestButton()
+{
+    // Add the test button to your existing button layout
+    if (m_buttonLayout) {
+        QPushButton* testPlatesolveBtn = new QPushButton("Test Plate Solve");
+        testPlatesolveBtn->setToolTip("Test plate solving with star extraction pipeline");
+        testPlatesolveBtn->setStyleSheet("QPushButton { background-color: #4CAF50; color: white; font-weight: bold; }");
+        connect(testPlatesolveBtn, &QPushButton::clicked, this, &MainWindow::onTestPlatesolveWithStarExtraction);
+        m_buttonLayout->addWidget(testPlatesolveBtn);
     }
 }

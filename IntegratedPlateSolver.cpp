@@ -10,6 +10,7 @@
 #include <cmath>
 #include <algorithm>
 #include "PCLMockAPI.h"
+#include "AstrometryDirectSolver.h"
 
 // WCSData conversion implementation
 WCSData PlatesolveResult::toWCSData(int imageWidth, int imageHeight) const
@@ -533,6 +534,9 @@ void IntegratedPlateSolver::solveFromStarMask(const QVector<QPoint>& starCenters
                                              const QVector<float>& starFluxes,
                                              const ImageData* imageData)
 {
+    std::vector<StarPosition> stars;
+    stars.reserve(starCenters.size());
+
     if (m_solving) {
         emit solveFailed("Solver is already running");
         return;
@@ -543,16 +547,40 @@ void IntegratedPlateSolver::solveFromStarMask(const QVector<QPoint>& starCenters
         return;
     }
 
+    /*    */
     qDebug() << "Starting plate solve with" << starCenters.size() << "stars";
+    xylist_t* xyls = xylist_open("../examples/FinalStackedMaster.axy");
+    starxy_t* field = xylist_read_field_num(xyls, 1, nullptr);
+    std::cout << "Read field with " << field->N << " stars" << std::endl;
+    
+    // Convert to our StarPosition format
+    stars.reserve(field->N);
+    for (int i = 0; i < field->N; i++) {
+        double flux = (field->flux && field->flux[i] > 0) ? field->flux[i] : 1000.0;
+	qDebug() << field->x[i] << field->y[i] << flux;
+	//        stars.emplace_back(field->x[i], field->y[i], flux);
+    }
+    
+    std::cout << "Loaded " << stars.size() << " stars from xylist file" << std::endl;
+    /*    */
+    
+    for (int i = 0; i < starCenters.size(); ++i) {
+        const QPoint& center = starCenters[i];
+        float flux = (i < starFluxes.size()) ? starFluxes[i] : 1000.0f;
+	qDebug() << center.x() << center.y() << flux;
+        stars.emplace_back(center.x(), center.y(), flux);
+    }
+    
+    astrometry_direct(stars);
     
     // Convert to DetectedStar format
-    QVector<DetectedStar> stars = convertStarsFromMask(starCenters, starFluxes);
+    //    QVector<DetectedStar> stars = convertStarsFromMask(starCenters, starFluxes);
     
     // Update image dimensions
     m_options.imageWidth = imageData->width;
     m_options.imageHeight = imageData->height;
     
-    solveFromDetectedStars(stars, imageData->width, imageData->height);
+    // solveFromDetectedStars(stars, imageData->width, imageData->height);
 }
 
 void IntegratedPlateSolver::solveFromDetectedStars(const QVector<DetectedStar>& stars,
@@ -624,27 +652,6 @@ void IntegratedPlateSolver::cancelSolve()
         
         emit solveFailed("Solve cancelled by user");
     }
-}
-
-// Helper methods
-
-QVector<DetectedStar> IntegratedPlateSolver::convertStarsFromMask(const QVector<QPoint>& starCenters,
-                                                                 const QVector<float>& starFluxes)
-{
-    QVector<DetectedStar> stars;
-    stars.reserve(starCenters.size());
-    
-    for (int i = 0; i < starCenters.size(); ++i) {
-        const QPoint& center = starCenters[i];
-        float flux = (i < starFluxes.size()) ? starFluxes[i] : 1000.0f;
-        
-        // Estimate SNR based on flux (simple heuristic)
-        double snr = qMax(3.0, log10(flux) * 5.0);
-        
-        stars.append(DetectedStar(center.x(), center.y(), flux, 3.0));
-    }
-    
-    return stars;
 }
 
 // Slot implementations

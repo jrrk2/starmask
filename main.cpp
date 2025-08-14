@@ -7,9 +7,14 @@ extern "C" {
 #include "astrometry/log.h"
 };
 
-void loginit(void)
+void loginit()
 {
     log_init(LOG_MSG);
+}
+
+void logverbose()
+{
+    log_init(LOG_VERB);
 }
 
 int main(int argc, char *argv[])

@@ -39,15 +39,16 @@ public:
     ~MainWindow();
 
 private slots:
-    // Add to MainWindow.h private slots:
-  void onDetectStarsIntegratedVersion();
+    void onTestPlatesolveWithStarExtraction();
+    void onTestPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    void onTestPlateSolveFailed(const QString& error);  
+    void onDetectStarsIntegratedVersion();
   
     void onExtractStarsWithPlatesolve();
     void onPlatesolveStarted();
     void onPlatesolveProgress(const QString& status);
     void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
     void onPlatesolveFailed(const QString& error);
-    void onToggleAutoPlatesolve(bool enabled);
     void configurePlatesolverSettings();
     void onWCSDataReceived(const WCSData& wcs);
     
@@ -60,10 +61,9 @@ private slots:
     //    void onPlatesolveProgress(const QString& status);
     //    void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
     //    void onPlatesolveFailed(const QString& error);
-    //    void onToggleAutoPlatesolve(bool enabled);
     //    void configurePlatesolverSettings();
     void onLoadImage();
-    void onDetectStars();
+  //    void onDetectStars();
     void onValidateStars();
     void onPlotCatalogStars();  // NEW: Direct catalog plotting
     void onValidationModeChanged();
@@ -93,7 +93,7 @@ private slots:
     void onDebugStarCorrelation();
     void onWCSDataReceived();
 private:
-    StarMaskResult performStarExtraction();
+  //    StarMaskResult performStarExtraction();
     void updateStarDisplay(const StarMaskResult& starMask);
     void updateCoordinateDisplay(const WCSData& wcs);
     void showCatalogValidationResults(const ValidationResult& validation);
@@ -106,7 +106,8 @@ private:
     //    void initializePlatesolveIntegration();
     //    void setupPlatesolveMenus();
     void extractStarsIntegrated();
-    
+    void addPlatesolvingTestButton();
+    void addPlatesolvingTestMenu();    
     void setupUI();
     void setupCatalogPlottingControls();  // NEW: Setup plotting controls
     void updateValidationControls();
@@ -126,7 +127,7 @@ private:
     void browseGaiaCatalogFile();
     void testGaiaPerformance();
     void onDetectStarsAdvanced();
-    void onDetectStarsSimple();
+  //    void onDetectStarsSimple();
     void setupStarDetectionControls();
     void setupEnhancedMatchingControls();
     void updateEnhancedMatchingControls();
@@ -150,7 +151,6 @@ private:
     QString formatDecCoordinates(double dec);
     
     ExtractStarsWithPlateSolve* m_platesolveIntegration;
-    bool m_autoPlatesolveEnabled;
     QProgressDialog* m_platesolveProgressDialog;
     
     QString m_astrometryPath;
@@ -161,7 +161,6 @@ private:
     int m_maxStarsForSolving;
     
     //    ExtractStarsWithPlateSolve* m_platesolveIntegration;
-    //    bool m_autoPlatesolveEnabled;
     //    QProgressDialog* m_platesolveProgressDialog;
     QAction* m_platesolveAction;
     QAction* m_toggleAutoPlatesolveAction;
@@ -227,7 +226,7 @@ private:
     QSlider* m_maxDistortionSlider;
     QCheckBox* m_enablePSFFittingCheck;
     QPushButton* m_detectAdvancedButton;
-    QPushButton* m_detectSimpleButton;
+  //    QPushButton* m_detectSimpleButton;
 
     // Enhanced matching controls
     QGroupBox* m_enhancedMatchingGroup;
