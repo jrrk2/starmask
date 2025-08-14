@@ -1,5 +1,13 @@
-#include <QApplication>
 #include <QDebug>
+
+void mydebug(QString s)
+{
+  qDebug() << s;
+}
+
+#include <iostream>
+#include <QTime>
+#include <QApplication>
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QTableWidget>
@@ -10,7 +18,6 @@
 #include <QMessageBox>
 #include <QMessageLogger>
 #include <QJsonDocument>
-#include <QTime>
 
 #include "MainWindow.h"
 #include "ImageReader.h"
@@ -255,7 +262,7 @@ void MainWindow::onPlatesolveFailed(const QString& error)
                 "• Ensure sufficient stars were detected").arg(error));
 }
 
-void MainWindow::onWCSDataReceived()
+void MainWindow::onWCSDataReceived(const WCSData& wcs)
 {
     m_hasWCS = true;
     updatePlottingControls();
@@ -506,7 +513,7 @@ void MainWindow::testWCSTransformations()
         maxError = std::max(maxError, error);
         totalError += error;
         
-	qDebug() << ( QString("  %1: error=%2 px").arg(cornerNames[i]).arg(error));
+	mydebug( QString("  %1: error=%2 px").arg(cornerNames[i]).arg(error));
     }
     
     double avgError = totalError / testPoints.size();
@@ -545,7 +552,7 @@ void PixelMatchingDebugger::exportDebugReport(const QString& filename)
 {
     QFile file(filename);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-      qDebug() << ("Failed to open debug report file:" + filename);
+      mydebug("Failed to open debug report file:" + filename);
         return;
     }
     
@@ -593,7 +600,7 @@ void PixelMatchingDebugger::exportDebugReport(const QString& filename)
     out << "\nEND OF REPORT\n";
     file.close();
     
-    qDebug() << ("Debug report exported to:" + filename);
+    mydebug("Debug report exported to:" + filename);
 }
 
 void MainWindow::setupEnhancedMatchingControls()
@@ -806,10 +813,10 @@ void MainWindow::onValidateStars()
             estimatedMagnitudes.append(estimatedMag);
         }
         
-        qDebug() <<  "Starting enhanced validation with parameters:";
-        qDebug() <<  "  Max pixel distance:" << params.maxPixelDistance;
-        qDebug() <<  "  Triangle matching:" << params.useTriangleMatching;
-        qDebug() <<  "  Min confidence:" << params.minMatchConfidence;
+        mydebug( "Starting enhanced validation with parameters:");
+        mydebug( "  Max pixel distance:" + QString::number(params.maxPixelDistance));
+        mydebug( "  Triangle matching:" + QString(params.useTriangleMatching ? "true" : "false"));
+        mydebug( "  Min confidence:" + QString::number(params.minMatchConfidence));
         
         // Perform enhanced validation
         m_lastEnhancedValidation = m_catalogValidator->validateStarsAdvanced(
@@ -1277,13 +1284,13 @@ void MainWindow::onDetectStarsAdvanced()
     float maxDistortion = m_maxDistortionSlider->value() / 100.0f;
     bool enablePSFFitting = m_enablePSFFittingCheck->isChecked();
 
-    qDebug() <<  "Starting advanced star detection with parameters:";
-    qDebug() <<  "  Sensitivity:" << sensitivity;
-    qDebug() <<  "  Structure layers:" << structureLayers;
-    qDebug() <<  "  Noise layers:" << noiseLayers;
-    qDebug() <<  "  Peak response:" << peakResponse;
-    qDebug() <<  "  Max distortion:" << maxDistortion;
-    qDebug() <<  "  PSF fitting:" << enablePSFFitting;
+    mydebug( "Starting advanced star detection with parameters:");
+    mydebug( "  Sensitivity:" + QString::number(sensitivity));
+    mydebug( "  Structure layers:" + QString::number(structureLayers));
+    mydebug( "  Noise layers:" + QString::number(noiseLayers));
+    mydebug( "  Peak response:" + QString::number(peakResponse));
+    mydebug( "  Max distortion:" + QString::number(maxDistortion));
+    mydebug( "  PSF fitting:" + QString::number(enablePSFFitting));
 
     // Use our advanced StarMaskGenerator method
     m_lastStarMask = StarMaskGenerator::detectStarsAdvanced(
@@ -1461,8 +1468,6 @@ void MainWindow::setupUI()
 // Update your onLoadImage method to enable star detection controls
 void MainWindow::onLoadImage()
 {
-    pcl_mock::InitializeMockAPI();
-    
     QString filePath = QFileDialog::getOpenFileName(
         this,
         "Open Image File",
@@ -1514,38 +1519,38 @@ void MainWindow::setupGaiaDR3Catalog()
     
     // Check if catalog file exists
     if (QFile::exists(catalogPath)) {
-      qDebug() << "✅ Found Gaia GDR3 catalog at:" << catalogPath;
+      mydebug( "✅ Found Gaia GDR3 catalog at:" + catalogPath);
         
         QFileInfo info(catalogPath);
         double sizeMB = info.size() / (1024.0 * 1024.0);
-        qDebug() << QString("📊 Catalog size: %1 MB").arg(sizeMB);
+        mydebug( QString("📊 Catalog size: %1 MB").arg(sizeMB));
         
         // Set the catalog path
         GaiaGDR3Catalog::setCatalogPath(catalogPath);
 	/*        
         // Test database connection
         if (GaiaGDR3Catalog::validateDatabase()) {
-	qDebug() << "✅ Gaia GDR3 database validation successful";
+            mydebug( "✅ Gaia GDR3 database validation successful");
             
             // Get detailed info
             QString info = GaiaGDR3Catalog::getCatalogInfo();
-            qDebug() << "📊 Catalog details:";
+            mydebug( "📊 Catalog details:");
             for (const QString& line : info.split('\n')) {
                 if (!line.isEmpty()) {
-		qDebug() << "   " << line;
+                    mydebug( "   " + line);
                 }
             }
             
             // Update status
             m_statusLabel->setText(QString("Gaia GDR3 catalog ready (%1 MB)").arg(sizeMB));
         } else {
-	qDebug() << "❌ Gaia GDR3 database validation failed";
+            mydebug( "❌ Gaia GDR3 database validation failed");
             m_statusLabel->setText("Gaia GDR3 catalog found but validation failed");
         }
         */
     } else {
-      qDebug() << "❌ Gaia GDR3 catalog not found at:" << catalogPath;
-      qDebug() << "   Available catalog sources:";
+      mydebug( "❌ Gaia GDR3 catalog not found at:" + catalogPath);
+      mydebug( "   Available catalog sources:");
         
         // Check alternative locations
         QStringList possiblePaths = {
@@ -1559,7 +1564,7 @@ void MainWindow::setupGaiaDR3Catalog()
         bool found = false;
         for (const QString& path : possiblePaths) {
             if (QFile::exists(path)) {
-	      qDebug() << "✅ Found alternative at:" << path;
+	      mydebug( "✅ Found alternative at:" + path);
                 GaiaGDR3Catalog::setCatalogPath(path);
                 found = true;
                 break;
@@ -1567,9 +1572,9 @@ void MainWindow::setupGaiaDR3Catalog()
         }
         
         if (!found) {
-	  qDebug() << "   - Hipparcos (network)";
-	  qDebug() << "   - Gaia DR3 (network)";
-	  qDebug() << "   - Tycho-2 (network)";
+	  mydebug( "   - Hipparcos (network)");
+	  mydebug( "   - Gaia DR3 (network)");
+	  mydebug( "   - Tycho-2 (network)");
             
             // Default to network catalogs if no local Gaia
             m_statusLabel->setText("Using network catalogs (Gaia GDR3 not found)");
@@ -1599,14 +1604,14 @@ void MainWindow::setupCatalogMenu()
       double crval1, crval2;
       if (m_hasWCS && m_catalogValidator->getCenter(crval1, crval2)) {
 	    
-	qDebug() << "\n=== TESTING GAIA GDR3 QUERY ===";
-	qDebug() << QString("Image center: RA=%1° Dec=%2°").arg(crval1).arg(crval2);
+	mydebug( "\n=== TESTING GAIA GDR3 QUERY ===");
+	mydebug( QString("Image center: RA=%1° Dec=%2°").arg(crval1).arg(crval2));
             
             auto start = QTime::currentTime();
             m_catalogValidator->queryCatalog(crval1, crval2, 1.0); // 1 degree radius test
             auto elapsed = start.msecsTo(QTime::currentTime());
             
-            qDebug() << QString("Query completed in %1ms").arg(elapsed);
+            mydebug( QString("Query completed in %1ms").arg(elapsed));
         } else {
             QMessageBox::information(this, "Test Query", "Load an image with WCS first");
         }
@@ -1668,16 +1673,16 @@ void MainWindow::browseGaiaCatalogFile()
         QFileInfo info(filePath);
         double sizeMB = info.size() / (1024.0 * 1024.0);
         
-        qDebug() << "📂 User selected Gaia catalog:" << filePath;
-        qDebug() << QString("📊 Size: %1 MB").arg(sizeMB);
+        mydebug( "📂 User selected Gaia catalog:" + filePath);
+        mydebug( QString("📊 Size: %1 MB").arg(sizeMB));
         
         // Validate the new catalog
         if (GaiaGDR3Catalog::validateDatabase()) {
             m_statusLabel->setText(QString("Custom Gaia GDR3 catalog loaded (%1 MB)").arg(sizeMB));
-            qDebug() << "✅ Custom Gaia catalog validation successful";
+            mydebug( "✅ Custom Gaia catalog validation successful");
         } else {
             m_statusLabel->setText("Gaia catalog validation failed");
-            qDebug() << "❌ Custom Gaia catalog validation failed";
+            mydebug( "❌ Custom Gaia catalog validation failed");
         }
         
         // Clear previous catalog data
@@ -1700,9 +1705,9 @@ void MainWindow::testGaiaPerformance()
    
     double testRadius = 2.0; // 2 degree radius for performance test
     
-    qDebug() << "\n=== GAIA GDR3 PERFORMANCE COMPARISON ===";
-    qDebug() << QString("Test query: RA=%1° Dec=%2° radius=%3°")
-      .arg(crval1).arg(crval2).arg(testRadius);
+    mydebug( "\n=== GAIA GDR3 PERFORMANCE COMPARISON ===");
+    mydebug( QString("Test query: RA=%1° Dec=%2° radius=%3°")
+	     .arg(crval1).arg(crval2).arg(testRadius));
     
     // Test different magnitude limits
     QVector<double> magLimits = {12.0, 15.0, 18.0, 20.0};
@@ -1715,23 +1720,25 @@ void MainWindow::testGaiaPerformance()
         
         auto elapsed = start.msecsTo(QTime::currentTime());
         
-        qDebug() << QString("🚀 Mag ≤ %1: %2 stars in %3ms (%4 stars/sec)")
+        mydebug( QString("🚀 Mag ≤ %1: %2 stars in %3ms (%4 stars/sec)")
                     .arg(magLimit).arg(stars.size()).arg(elapsed)
-	  .arg(stars.size() * 1000.0 / elapsed);
+		 .arg(stars.size() * 1000.0 / elapsed));
     }
     
     // Test spectrum search
     auto start = QTime::currentTime();
     auto specStars = GaiaGDR3Catalog::findStarsWithSpectra(crval1, crval2, testRadius, 15.0);
     auto elapsed = start.msecsTo(QTime::currentTime());
-    qDebug() << QString("🌈 BP/RP spectra search: %1 stars in %2ms")
-      .arg(specStars.size()).arg(elapsed);
-    qDebug() << "📊 Gaia GDR3 provides:";
-    qDebug() << "   - Precise astrometry (positions, proper motions, parallax)";
-    qDebug() << "   - Multi-band photometry (G, BP, RP)";
-    qDebug() << "   - BP/RP low-resolution spectra for many stars";
-    qDebug() << "   - Quality flags and error estimates";
-    qDebug() << "   - Proper motion corrections to current epoch";
+    
+    mydebug( QString("🌈 BP/RP spectra search: %1 stars in %2ms")
+	     .arg(specStars.size()).arg(elapsed));
+    
+    mydebug( "📊 Gaia GDR3 provides:");
+    mydebug( "   - Precise astrometry (positions, proper motions, parallax)");
+    mydebug( "   - Multi-band photometry (G, BP, RP)");
+    mydebug( "   - BP/RP low-resolution spectra for many stars");
+    mydebug( "   - Quality flags and error estimates");
+    mydebug( "   - Proper motion corrections to current epoch");
 }
 
 // Update the destructor to clean up Gaia resources:
@@ -1744,22 +1751,22 @@ MainWindow::~MainWindow()
 // Test function you can add to MainWindow or run separately
 void testGaiaGDR3Integration()
 {
-  qDebug() << "\n=== GAIA GDR3 INTEGRATION TEST ===";
+  mydebug( "\n=== GAIA GDR3 INTEGRATION TEST ===");
     
     // 1. Set up the catalog path
     QString catalogPath = "/Volumes/X10Pro/gdr3-1.0.0-01.xpsd";
     GaiaGDR3Catalog::setCatalogPath(catalogPath);
     
     if (!GaiaGDR3Catalog::isAvailable()) {
-      qDebug() << "❌ Gaia catalog not available at:" << catalogPath;
+      mydebug( "❌ Gaia catalog not available at:" + catalogPath);
         return;
     }
     
-    qDebug() << "✅ Catalog info:";
-    qDebug() << GaiaGDR3Catalog::getCatalogInfo();
+    mydebug( "✅ Catalog info:");
+    mydebug( GaiaGDR3Catalog::getCatalogInfo());
     
     // 2. Test basic query around M31 (Andromeda Galaxy)
-    qDebug() << "\n--- Testing M31 Region Query ---";
+    mydebug( "\n--- Testing M31 Region Query ---");
     double m31_ra = 10.684708;   // M31 RA
     double m31_dec = 41.268750;  // M31 Dec
     
@@ -1767,20 +1774,20 @@ void testGaiaGDR3Integration()
     auto m31_stars = GaiaGDR3Catalog::queryRegion(m31_ra, m31_dec, 0.5, 15.0);
     auto elapsed = start.msecsTo(QTime::currentTime());
     
-    qDebug() << QString("Found %1 stars around M31 in %2ms").arg(m31_stars.size()).arg(elapsed);
+    mydebug( QString("Found %1 stars around M31 in %2ms").arg(m31_stars.size()).arg(elapsed));
     
     if (!m31_stars.isEmpty()) {
-      qDebug() << "Brightest 5 stars:";
+      mydebug( "Brightest 5 stars:");
         for (int i = 0; i < qMin(5, m31_stars.size()); ++i) {
             const auto& star = m31_stars[i];
-            qDebug() << QString("  %1: RA=%2° Dec=%3° G=%4 %2")
-	      .arg(star.sourceId).arg(star.ra).arg(star.dec)
-	      .arg(star.magnitude).arg(star.spectralClass);
+            mydebug( QString("  %1: RA=%2° Dec=%3° G=%4 %2")
+                        .arg(star.sourceId).arg(star.ra).arg(star.dec)
+	      .arg(star.magnitude).arg(star.spectralClass));
         }
     }
     
     // 3. Test bright star search around Polaris
-    qDebug() << "\n--- Testing Bright Stars Around Polaris ---";
+    mydebug( "\n--- Testing Bright Stars Around Polaris ---");
     double polaris_ra = 37.954;   // Polaris RA  
     double polaris_dec = 89.264;  // Polaris Dec
     
@@ -1788,16 +1795,16 @@ void testGaiaGDR3Integration()
     auto bright_stars = GaiaGDR3Catalog::findBrightestStars(polaris_ra, polaris_dec, 2.0, 10);
     elapsed = start.msecsTo(QTime::currentTime());
     
-    qDebug() << QString("Found %1 bright stars around Polaris in %2ms").arg(bright_stars.size()).arg(elapsed);
+    mydebug( QString("Found %1 bright stars around Polaris in %2ms").arg(bright_stars.size()).arg(elapsed));
     
     for (const auto& star : bright_stars) {
-      qDebug() << QString("  G=%1 %2 at (%3°, %4°) PM=(%5, %6) mas/yr")
-	.arg(star.spectralClass).arg(star.magnitude)
-	.arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
+      mydebug( QString("  G=%1 %2 at (%3°, %4°) PM=(%5, %6) mas/yr")
+                    .arg(star.spectralClass).arg(star.magnitude)
+	       .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec));
     }
     
     // 4. Test spectrum search around Vega
-    qDebug() << "\n--- Testing Spectrum Search Around Vega ---";
+    mydebug( "\n--- Testing Spectrum Search Around Vega ---");
     double vega_ra = 279.234;    // Vega RA
     double vega_dec = 38.784;    // Vega Dec
     
@@ -1805,20 +1812,20 @@ void testGaiaGDR3Integration()
     auto spectral_stars = GaiaGDR3Catalog::findStarsWithSpectra(vega_ra, vega_dec, 1.0, 12.0);
     elapsed = start.msecsTo(QTime::currentTime());
     
-    qDebug() << QString("Found %1 stars with BP/RP spectra around Vega in %2ms").arg(spectral_stars.size()).arg(elapsed);
+    mydebug( QString("Found %1 stars with BP/RP spectra around Vega in %2ms").arg(spectral_stars.size()).arg(elapsed));
     
     for (const auto& star : spectral_stars) {
-      qDebug() << QString("  %1: G=%2 BP=%3 RP=%4 %5 [SPECTRUM]")
+      mydebug( QString("  %1: G=%2 BP=%3 RP=%4 %5 [SPECTRUM]")
                     .arg(star.sourceId).arg(star.magnitude)
-	.arg(star.magBP).arg(star.magRP).arg(star.spectralClass);
+	       .arg(star.magBP).arg(star.magRP).arg(star.spectralClass));
     }
     
     // 5. Test performance with large search
-    qDebug() << "\n--- Testing Performance ---";
+    mydebug( "\n--- Testing Performance ---");
     GaiaGDR3Catalog::testPerformance(0.0, 0.0, 5.0); // Large search around celestial equator
     
     // 6. Test proper motion application
-    qDebug() << "\n--- Testing Proper Motion Correction ---";
+    mydebug( "\n--- Testing Proper Motion Correction ---");
     GaiaGDR3Catalog::SearchParameters params;
     params.centerRA = 266.417;  // Galactic center
     params.centerDec = -29.008;
@@ -1829,22 +1836,22 @@ void testGaiaGDR3Integration()
     params.maxResults = 5;
     
     auto pm_stars = GaiaGDR3Catalog::queryRegion(params);
-    qDebug() << QString("Found %1 stars with proper motion applied to epoch %2")
-      .arg(pm_stars.size()).arg(params.epochYear);
+    mydebug( QString("Found %1 stars with proper motion applied to epoch %2")
+	     .arg(pm_stars.size()).arg(params.epochYear));
     
     for (const auto& star : pm_stars) {
-      qDebug() << QString("  %1: G=%2 at (%3°, %4°) PM=(%5, %6)")
-	.arg(star.sourceId).arg(star.magnitude)
-	.arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec);
+      mydebug( QString("  %1: G=%2 at (%3°, %4°) PM=(%5, %6)")
+                    .arg(star.sourceId).arg(star.magnitude)
+	       .arg(star.ra).arg(star.dec).arg(star.pmRA).arg(star.pmDec));
     }
     
-    qDebug() << "\n✅ Gaia GDR3 integration test completed successfully!";
+    mydebug( "\n✅ Gaia GDR3 integration test completed successfully!");
 }
 
 // Integration example for your existing star validation workflow
 void integrateGaiaWithStarValidation()
 {
-  qDebug() << "\n=== GAIA INTEGRATION WITH STAR VALIDATION ===";
+  mydebug( "\n=== GAIA INTEGRATION WITH STAR VALIDATION ===");
     
     // Example: Your detected stars from star mask
     QVector<QPoint> detectedStars = {
@@ -1865,8 +1872,8 @@ void integrateGaiaWithStarValidation()
     double fieldRadius = sqrt(imageWidth * imageWidth + imageHeight * imageHeight) 
                         * pixelScale / 3600.0 / 2.0; // Convert to degrees
     
-    qDebug() << QString("Image field: %1° radius around RA=%2° Dec=%3°")
-      .arg(fieldRadius).arg(centerRA).arg(centerDec);
+    mydebug( QString("Image field: %1° radius around RA=%2° Dec=%3°")
+	     .arg(fieldRadius).arg(centerRA).arg(centerDec));
     
     // Query Gaia catalog for this field
     GaiaGDR3Catalog::SearchParameters params;
@@ -1879,7 +1886,7 @@ void integrateGaiaWithStarValidation()
     
     auto catalogStars = GaiaGDR3Catalog::queryRegion(params);
     
-    qDebug() << QString("Retrieved %1 Gaia stars for validation").arg(catalogStars.size());
+    mydebug( QString("Retrieved %1 Gaia stars for validation").arg(catalogStars.size()));
     
     // Example validation process (simplified)
     int matches = 0;
@@ -1896,43 +1903,43 @@ void integrateGaiaWithStarValidation()
             
             if (distance < matchTolerance) {
                 matches++;
-                qDebug() << QString("✅ Match: detected(%1,%2) ↔ Gaia %3 G=%4 dist=%5px")
-		  .arg(detected.x()).arg(detected.y())
-		  .arg(catalog.sourceId).arg(catalog.magnitude).arg(distance);
+                mydebug( QString("✅ Match: detected(%1,%2) ↔ Gaia %3 G=%4 dist=%5px")
+                            .arg(detected.x()).arg(detected.y())
+			 .arg(catalog.sourceId).arg(catalog.magnitude).arg(distance));
                 break;
             }
         }
     }
     
     double matchPercentage = 100.0 * matches / detectedStars.size();
-    qDebug() << QString("Validation result: %1/%2 stars matched (%3%%)")
-      .arg(matches).arg(detectedStars.size()).arg(matchPercentage);
+    mydebug( QString("Validation result: %1/%2 stars matched (%3%%)")
+	     .arg(matches).arg(detectedStars.size()).arg(matchPercentage));
 }
 
 // Advanced Gaia features demonstration
 void demonstrateAdvancedGaiaFeatures()
 {
-  qDebug() << "\n=== ADVANCED GAIA GDR3 FEATURES ===";
+  mydebug( "\n=== ADVANCED GAIA GDR3 FEATURES ===");
     
     // 1. Color-magnitude diagram data
-  qDebug() << "\n--- Color-Magnitude Diagram Data ---";
+  mydebug( "\n--- Color-Magnitude Diagram Data ---");
     auto stars = GaiaGDR3Catalog::queryRegion(0.0, 0.0, 2.0, 15.0);
     
     if (!stars.isEmpty()) {
-      qDebug() << "Sample stars for HR diagram:";
+      mydebug( "Sample stars for HR diagram:");
         for (int i = 0; i < qMin(10, stars.size()); ++i) {
             const auto& star = stars[i];
             double bpRpColor = star.magBP - star.magRP;
             double absoluteG = star.magnitude; // Would need distance for absolute magnitude
             
-            qDebug() << QString("  G=%1 BP-RP=%2 %3 plx=%4")
-	      .arg(absoluteG).arg(bpRpColor)
-	      .arg(star.spectralClass).arg(star.parallax);
+            mydebug( QString("  G=%1 BP-RP=%2 %3 plx=%4")
+                        .arg(absoluteG).arg(bpRpColor)
+		     .arg(star.spectralClass).arg(star.parallax));
         }
     }
     
     // 2. Proper motion analysis
-    qDebug() << "\n--- High Proper Motion Stars ---";
+    mydebug( "\n--- High Proper Motion Stars ---");
     auto highPMStars = GaiaGDR3Catalog::queryRegion(83.633, 22.014, 5.0, 12.0); // Around Aldebaran
     
     QVector<GaiaGDR3Catalog::Star> fastMovers;
@@ -1943,15 +1950,15 @@ void demonstrateAdvancedGaiaFeatures()
         }
     }
     
-    qDebug() << QString("Found %1 stars with PM > 50 mas/year").arg(fastMovers.size());
+    mydebug( QString("Found %1 stars with PM > 50 mas/year").arg(fastMovers.size()));
     for (const auto& star : fastMovers) {
         double totalPM = sqrt(star.pmRA * star.pmRA + star.pmDec * star.pmDec);
-        qDebug() << QString("  %1: PM=%2 mas/yr G=%3")
-	  .arg(star.sourceId).arg(totalPM).arg(star.magnitude);
+        mydebug( QString("  %1: PM=%2 mas/yr G=%3")
+		 .arg(star.sourceId).arg(totalPM).arg(star.magnitude));
     }
     
     // 3. Parallax-based distance estimates
-    qDebug() << "\n--- Nearby Stars (Parallax > 10 mas) ---";
+    mydebug( "\n--- Nearby Stars (Parallax > 10 mas) ---");
     QVector<GaiaGDR3Catalog::Star> nearbyStars;
     for (const auto& star : highPMStars) {
         if (star.parallax > 10.0) { // Closer than ~100 parsecs
@@ -1959,16 +1966,16 @@ void demonstrateAdvancedGaiaFeatures()
         }
     }
     
-    qDebug() << QString("Found %1 nearby stars").arg(nearbyStars.size());
+    mydebug( QString("Found %1 nearby stars").arg(nearbyStars.size()));
     for (const auto& star : nearbyStars) {
         double distancePc = 1000.0 / star.parallax; // Distance in parsecs
-        qDebug() << QString("  %1: %2 pc G=%3 %4")
-	  .arg(star.sourceId).arg(distancePc)
-	  .arg(star.magnitude).arg(star.spectralClass);
+        mydebug( QString("  %1: %2 pc G=%3 %4")
+                    .arg(star.sourceId).arg(distancePc)
+		 .arg(star.magnitude).arg(star.spectralClass));
     }
     
     // 4. Quality assessment
-    qDebug() << "\n--- Data Quality Assessment ---";
+    mydebug( "\n--- Data Quality Assessment ---");
     int highQuality = 0;
     int withSpectra = 0;
     int goodAstrometry = 0;
@@ -1979,24 +1986,24 @@ void demonstrateAdvancedGaiaFeatures()
         if (GaiaGDR3Catalog::hasGoodAstrometry(star)) goodAstrometry++;
     }
     
-    qDebug() << QString("Quality statistics from %1 stars:").arg(stars.size());
-    qDebug() << QString("  High quality: %1 (%2%%)").arg(highQuality).arg(100.0 * highQuality / stars.size());
-    qDebug() << QString("  With BP/RP spectra: %1 (%2%%)").arg(withSpectra).arg(100.0 * withSpectra / stars.size());
-    qDebug() << QString("  Good astrometry: %1 (%2%%)").arg(goodAstrometry).arg(100.0 * goodAstrometry / stars.size());
+    mydebug( QString("Quality statistics from %1 stars:").arg(stars.size()));
+    mydebug( QString("  High quality: %1 (%2%%)").arg(highQuality).arg(100.0 * highQuality / stars.size()));
+    mydebug( QString("  With BP/RP spectra: %1 (%2%%)").arg(withSpectra).arg(100.0 * withSpectra / stars.size()));
+    mydebug( QString("  Good astrometry: %1 (%2%%)").arg(goodAstrometry).arg(100.0 * goodAstrometry / stars.size()));
 }
 
 // Performance comparison between different catalog sources
 void comparePerformanceWithOtherCatalogs()
 {
-  qDebug() << "\n=== CATALOG PERFORMANCE COMPARISON ===";
+  mydebug( "\n=== CATALOG PERFORMANCE COMPARISON ===");
     
     double testRA = 83.633;     // Aldebaran region
     double testDec = 22.014;
     double testRadius = 1.0;    // 1 degree radius
     double magLimit = 15.0;
     
-    qDebug() << QString("Test region: RA=%1° Dec=%2° radius=%3° mag≤%4")
-      .arg(testRA).arg(testDec).arg(testRadius).arg(magLimit);
+    mydebug( QString("Test region: RA=%1° Dec=%2° radius=%3° mag≤%4")
+	     .arg(testRA).arg(testDec).arg(testRadius).arg(magLimit));
     
     // Test Gaia GDR3 local database
     if (GaiaGDR3Catalog::isAvailable()) {
@@ -2004,8 +2011,8 @@ void comparePerformanceWithOtherCatalogs()
         auto gaiaStars = GaiaGDR3Catalog::queryRegion(testRA, testDec, testRadius, magLimit);
         auto elapsed = start.msecsTo(QTime::currentTime());
         
-        qDebug() << QString("🚀 Gaia GDR3 (local): %1 stars in %2ms (%3 stars/sec)")
-	  .arg(gaiaStars.size()).arg(elapsed).arg(gaiaStars.size() * 1000.0 / elapsed);
+        mydebug( QString("🚀 Gaia GDR3 (local): %1 stars in %2ms (%3 stars/sec)")
+		 .arg(gaiaStars.size()).arg(elapsed).arg(gaiaStars.size() * 1000.0 / elapsed));
         
         // Analyze data quality
         int withParallax = 0, withPM = 0, withSpectra = 0;
@@ -2015,15 +2022,15 @@ void comparePerformanceWithOtherCatalogs()
             if (star.hasSpectrum) withSpectra++;
         }
         
-	qDebug() << QString("  Data richness: %1 with parallax, %2 with PM, %3 with spectra")
-	  .arg(withParallax).arg(withPM).arg(withSpectra);
+        mydebug( QString("  Data richness: %1 with parallax, %2 with PM, %3 with spectra")
+		 .arg(withParallax).arg(withPM).arg(withSpectra));
     }
     
-    qDebug() << "📊 Comparison summary:";
-    qDebug() << "  Gaia GDR3: ~1000x faster than network, richest data (astrometry + photometry + spectra)";
-    qDebug() << "  2MASS: ~100x faster than network, photometry only (J, H, K bands)";
-    qDebug() << "  Network catalogs: Slow (2-10 seconds), limited by bandwidth";
-    qDebug() << "  Bright star DB: Fastest (< 1ms), but only brightest stars";
+    mydebug( "📊 Comparison summary:");
+    mydebug( "  Gaia GDR3: ~1000x faster than network, richest data (astrometry + photometry + spectra)");
+    mydebug( "  2MASS: ~100x faster than network, photometry only (J, H, K bands)");
+    mydebug( "  Network catalogs: Slow (2-10 seconds), limited by bandwidth");
+    mydebug( "  Bright star DB: Fastest (< 1ms), but only brightest stars");
 }
 
 MainWindow::MainWindow(QWidget* parent)
@@ -2050,11 +2057,11 @@ MainWindow::MainWindow(QWidget* parent)
     
     // Connect mode control
     connect(m_plotModeCheck, &QCheckBox::toggled, this, &MainWindow::onPlotModeToggled);
-    /*    
+    
     // Connect validation control signals
     connect(m_validationModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onValidationModeChanged);
-
+    /*
       connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [this](double) {
                 m_catalogQueried = false;
@@ -2229,33 +2236,33 @@ void MainWindow::extractWCSFromImage()
     m_hasWCS = false;
     
     if (!m_imageData || m_imageData->metadata.isEmpty()) {
-      qDebug() << "No metadata available for WCS extraction";
+      mydebug( "No metadata available for WCS extraction");
         return;
     }
     
-    qDebug() << "=== Using PCL Native WCS Extraction ===";
+    mydebug( "=== Using PCL Native WCS Extraction ===");
     
     // Use PCL's native WCS parsing instead of custom parsing
     m_hasWCS = m_catalogValidator->setWCSFromImageMetadata(*m_imageData);
+    double crval1, crval2, pixscale = m_catalogValidator->getPixScale() ;
+    m_catalogValidator->getCenter(crval1, crval2);
     
     // Update WCS status display
     QLabel* wcsLabel = findChild<QLabel*>("wcsStatusLabel");
     if (wcsLabel) {
         if (m_hasWCS) {
-	  double crval1, crval2, pixscale = m_catalogValidator->getPixScale() ;
-	  m_catalogValidator->getCenter(crval1, crval2);
-	  wcsLabel->setText(QString("WCS Status: Available (PCL)\nRA: %1°, Dec: %2°\nPixel Scale: %3 arcsec/px")
+            wcsLabel->setText(QString("WCS Status: Available (PCL)\nRA: %1°, Dec: %2°\nPixel Scale: %3 arcsec/px")
                             .arg(crval1, 0, 'f', 4)
                             .arg(crval2, 0, 'f', 4)
                             .arg(pixscale, 0, 'f', 2));
-	  wcsLabel->setStyleSheet("QLabel { color: green; font-weight: bold; }");
+            wcsLabel->setStyleSheet("QLabel { color: green; font-weight: bold; }");
         } else {
-	  wcsLabel->setText("WCS Status: Failed (PCL)");
-	  wcsLabel->setStyleSheet("QLabel { color: red; font-weight: bold; }");
+            wcsLabel->setText("WCS Status: Failed (PCL)");
+            wcsLabel->setStyleSheet("QLabel { color: red; font-weight: bold; }");
         }
     }
     
-    qDebug() << "PCL WCS extraction completed, valid:" << m_hasWCS;
+    mydebug( "PCL WCS extraction completed, valid:" + QString::number(m_hasWCS));
 }
 
 void MainWindow::onDetectStars()
@@ -2367,7 +2374,7 @@ void MainWindow::onValidationCompleted(const ValidationResult& result)
     m_lastValidation = result;
     m_validationComplete = true;
     
-    qDebug() << "Validation completed with" << result.totalMatches << "matches";
+    mydebug( "Validation completed with" + QString::number(result.totalMatches) + "matches");
 }
 
 void MainWindow::onValidatorError(const QString& message)
@@ -2468,7 +2475,7 @@ void MainWindow::updateEnhancedMatchingControls()
 
 void MainWindow::testPixelMatchingDebug()
 {
-  qDebug() << "\n=== TESTING PIXEL MATCHING DEBUG SYSTEM ===";
+  mydebug( "\n=== TESTING PIXEL MATCHING DEBUG SYSTEM ===");
     
     // Create some test data to simulate your matching problem
     QVector<QPoint> testDetectedStars = {
@@ -2539,11 +2546,11 @@ void MainWindow::testPixelMatchingDebug()
     testResult.matchPercentage = 40.0;
     testResult.isValid = true;
     
-    qDebug() << "Created test data:";
-    qDebug() << "  Detected stars:" << testDetectedStars.size();
-    qDebug() << "  Catalog stars:" << testCatalogStars.size();  
-    qDebug() << "  Matches:" << testResult.matches.size();
-    qDebug() << "  Successful matches:" << testResult.totalMatches;
+    mydebug( "Created test data:");
+    mydebug( "  Detected stars:" + QString::number(testDetectedStars.size()));
+    mydebug( "  Catalog stars:" + QString::number(testCatalogStars.size())); 
+      mydebug( "  Matches:" + QString::number(testResult.matches.size()));
+      mydebug( "  Successful matches:" + QString::number(testResult.totalMatches));
     
     // Test the debugging system
     if (!m_pixelDebugger) {
@@ -2554,24 +2561,24 @@ void MainWindow::testPixelMatchingDebug()
     m_pixelDebugger->diagnoseMatching(testDetectedStars, testCatalogStars, testResult, nullptr);
     
     // Test specific analysis methods
-    qDebug() << "\n--- Testing Distance Criteria Analysis ---";
+    mydebug( "\n--- Testing Distance Criteria Analysis ---");
     m_pixelDebugger->analyzeDistanceCriteria(5.0); // 5px tolerance
     
-    qDebug() << "\n--- Testing Missed Matches Analysis ---";
+    mydebug( "\n--- Testing Missed Matches Analysis ---");
     m_pixelDebugger->findMissedMatches(6.0);
     
-    qDebug() << "\n--- Testing Tolerance Sensitivity ---";
+    mydebug( "\n--- Testing Tolerance Sensitivity ---");
     m_pixelDebugger->testToleranceRange(2.0, 8.0, 1.0);
     
-    qDebug() << "\n--- Testing Summary Report ---";
+    mydebug( "\n--- Testing Summary Report ---");
     m_pixelDebugger->printSummaryReport();
     
-    qDebug() << "\n=== TEST COMPLETE ===";
-    qDebug() << "Expected findings:";
-    qDebug() << "• 2 matches should be flagged as 'visual matches that fail criteria'";
-    qDebug() << "• Optimal tolerance should be around 5-6 pixels";
-    qDebug() << "• Should detect systematic offset if any";
-    qDebug() << "• Efficiency should be low (40%) indicating matching problems";
+    mydebug( "\n=== TEST COMPLETE ===");
+    mydebug( "Expected findings:");
+    mydebug( "• 2 matches should be flagged as 'visual matches that fail criteria'");
+    mydebug( "• Optimal tolerance should be around 5-6 pixels");
+    mydebug( "• Should detect systematic offset if any");
+    mydebug( "• Efficiency should be low (40%) indicating matching problems");
 }
 
 // Call this from a menu item or button for testing
@@ -2590,11 +2597,11 @@ void MainWindow::addTestButton()
 void MainWindow::quickDiagnoseCurrentMatches()
 {
     if (!m_validationComplete) {
-        qDebug() << "No validation results to diagnose";
+      mydebug( "No validation results to diagnose");
         return;
     }
     
-    qDebug() << "\n🔍 QUICK DIAGNOSIS OF CURRENT MATCHES";
+    mydebug( "\n🔍 QUICK DIAGNOSIS OF CURRENT MATCHES");
     
     // Quick analysis without full debug system
     int closeButFailing = 0;
@@ -2618,36 +2625,36 @@ void MainWindow::quickDiagnoseCurrentMatches()
             // Check for problematic cases
             if (distance <= 5.0 && !match.isGoodMatch) {
                 closeButFailing++;
-                qDebug() << QString("⚠️  Close but failing: det[%1] distance=%2 to cat[%3]")
-                            .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex);
+                mydebug( QString("⚠️  Close but failing: det[%1] distance=%2 to cat[%3]")
+			 .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex));
             }
             
             if (distance > 8.0 && match.isGoodMatch) {
                 farButPassing++;
-                qDebug() << QString("⚠️  Far but passing: det[%1] distance=%2 to cat[%3]")
-                            .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex);
+                mydebug( QString("⚠️  Far but passing: det[%1] distance=%2 to cat[%3]")
+			 .arg(match.detectedIndex).arg(distance).arg(match.catalogIndex));
             }
         }
     }
     
     double avgDistance = (validDistanceCount > 0) ? totalDistance / validDistanceCount : 0.0;
     
-    qDebug() << QString("Quick diagnosis results:");
-    qDebug() << QString("  Average match distance: %1 px").arg(avgDistance);
-    qDebug() << QString("  Close but failing matches: %1").arg(closeButFailing);
-    qDebug() << QString("  Far but passing matches: %1").arg(farButPassing);
+    mydebug( QString("Quick diagnosis results:"));
+    mydebug( QString("  Average match distance: %1 px").arg(avgDistance));
+    mydebug( QString("  Close but failing matches: %1").arg(closeButFailing));
+    mydebug( QString("  Far but passing matches: %1").arg(farButPassing));
     
     // Quick recommendations
     if (closeButFailing > 0) {
-        qDebug() << "💡 RECOMMENDATION: You have close matches that are failing criteria";
-        qDebug() << "   → Check magnitude difference requirements";
-        qDebug() << "   → Consider increasing pixel tolerance to" << (avgDistance * 1.5);
-        qDebug() << "   → Use full debug system for detailed analysis";
+      mydebug( "💡 RECOMMENDATION: You have close matches that are failing criteria");
+      mydebug( "   → Check magnitude difference requirements");
+      mydebug( "   → Consider increasing pixel tolerance to" + QString::number((avgDistance * 1.5)));
+      mydebug( "   → Use full debug system for detailed analysis");
     }
     
     if (closeButFailing == 0 && farButPassing == 0) {
-        qDebug() << "✅ Matching criteria appear to be working correctly";
-        qDebug() << "   Issue may be in coordinate transformations or catalog accuracy";
+      mydebug( "✅ Matching criteria appear to be working correctly");
+      mydebug( "   Issue may be in coordinate transformations or catalog accuracy");
     }
 }
 
@@ -2680,7 +2687,7 @@ void MainWindow::extractStarsIntegrated()
         );
     }
     
-    qDebug() << "Extracted" << starMask.starCenters.size() << "stars";
+    mydebug( "Extracted" + QString::number(starMask.starCenters.size()) + "stars");
 }
 
 void MainWindow::showPlatesolveResults(const PlatesolveResult& result)
@@ -2843,14 +2850,14 @@ StarMaskResult MainWindow::performStarExtraction()
     StarMaskResult result;
     
     if (!m_imageData || !m_imageData->isValid()) {
-        qDebug() << "No valid image data for star extraction";
+      mydebug( "No valid image data for star extraction");
         return result;
     }
     
     // Call your existing star detection method
     result = StarMaskGenerator::detectStars(*m_imageData, 0.5f);
     
-    qDebug() << "Star extraction completed:" << result.starCenters.size() << "stars found";
+    mydebug( "Star extraction completed:" + QString::number(result.starCenters.size()) + "stars found");
     return result;
 }
 
@@ -2858,7 +2865,7 @@ StarMaskResult MainWindow::performStarExtraction()
 void MainWindow::updateStarDisplay(const StarMaskResult& starMask)
 {
     if (!m_imageDisplayWidget) {
-        qDebug() << "No image display widget available";
+      mydebug( "No image display widget available");
         return;
     }
     
@@ -2884,14 +2891,14 @@ void MainWindow::updateStarDisplay(const StarMaskResult& starMask)
         m_statusLabel->setText(status);
     }
     
-    qDebug() << "Star display updated with" << starMask.starCenters.size() << "stars";
+    mydebug( "Star display updated with" + QString::number(starMask.starCenters.size()) + "stars");
 }
 
 // 8. Add missing updateCoordinateDisplay() method
 void MainWindow::updateCoordinateDisplay(const WCSData& wcs)
 {
     if (!wcs.isValid) {
-        qDebug() << "Invalid WCS data for coordinate display";
+      mydebug( "Invalid WCS data for coordinate display");
         return;
     }
     
@@ -2907,7 +2914,7 @@ void MainWindow::updateCoordinateDisplay(const WCSData& wcs)
         m_coordinateLabel->setText(coordText);
     }
     
-    qDebug() << "Coordinate display updated:" << coordText;
+    mydebug( "Coordinate display updated:" + coordText);
 }
 
 // 9. Add missing showCatalogValidationResults() method
@@ -2934,44 +2941,23 @@ void MainWindow::showCatalogValidationResults(const ValidationResult& validation
     // Or show in a message box
     QMessageBox::information(this, "Catalog Validation Results", resultsText);
     
-    qDebug() << "Catalog validation results displayed";
+    mydebug( "Catalog validation results displayed");
 }
 
-void MainWindow::onWCSDataReceived(const WCSData& wcs)
-{
-    if (!wcs.isValid) {
-        qDebug() << "Received invalid WCS data";
-        return;
-    }
+/*
+// 10. Add missing member variables to MainWindow.h
+private:
+    // Add these member variables to your MainWindow class:
+    ExtractStarsWithPlateSolve* m_platesolveIntegration = nullptr;
+    std::unique_ptr<ImageData> m_imageData;  // or ImageData* m_imageData = nullptr;
+    QLabel* m_statusLabel = nullptr;
+    QLabel* m_coordinateLabel = nullptr;
+    QTextEdit* m_resultsText = nullptr;
+    ImageDisplayWidget* m_imageDisplayWidget = nullptr;
     
-    qDebug() << "WCS data received and processed";
-    qDebug() << "  RA center:" << wcs.crval1 << "degrees";
-    qDebug() << "  Dec center:" << wcs.crval2 << "degrees";
-    qDebug() << "  Pixel scale:" << wcs.pixscale << "arcsec/pixel";
-    
-    // Set WCS flag
-    m_hasWCS = true;
-    
-    // Update image display with WCS
-    if (m_imageDisplayWidget) {
-        m_imageDisplayWidget->setWCSData(wcs);
-        m_imageDisplayWidget->setWCSOverlayEnabled(true);
-    }
-    
-    // Update coordinate display
-    updateCoordinateDisplay(wcs);
-    
-    // Update UI controls
-    updatePlottingControls();
-    updateStatusDisplay();
-    
-    // Update status
-    QString statusMsg = QString("✓ WCS Available: RA=%1° Dec=%2° Scale=%3\"/px")
-                       .arg(wcs.crval1, 0, 'f', 4)
-                       .arg(wcs.crval2, 0, 'f', 4)
-                       .arg(wcs.pixscale, 0, 'f', 2);
-    
-    if (m_statusLabel) {
-        m_statusLabel->setText(statusMsg);
-    }
-}
+    // Add missing method declarations:
+    StarMaskResult performStarExtraction();
+    void updateStarDisplay(const StarMaskResult& starMask);
+    void updateCoordinateDisplay(const WCSData& wcs);
+    void showCatalogValidationResults(const ValidationResult& validation);
+*/

@@ -10,6 +10,7 @@
 struct StarMaskResult {
     QVector<QPoint> starCenters;
     QVector<float> starRadii;
+    QVector<float> starFluxes;    // Add this missing member
     QVector<bool> starValid;
     QImage maskImage;
 };

@@ -13,6 +13,8 @@
 #include <string>
 #include <pcl/api/APIDefs.h>
 
+void loginit(void);
+
 namespace pcl_mock {
 
 // Common PCL API types

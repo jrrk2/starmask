@@ -257,6 +257,16 @@ struct WCSData {
         pc11 = pc22 = 1.0;
         pc12 = pc21 = 0.0;
     }
+      
+    void reset() {
+        isValid = false;
+        crval1 = crval2 = crpix1 = crpix2 = 0.0;
+        cd11 = cd12 = cd21 = cd22 = 0.0;
+        pixscale = orientation = 0.0;
+        width = height = 0;
+    }
+    WCSData() = default;
+
 };
 
 class StarCatalogValidator : public QObject

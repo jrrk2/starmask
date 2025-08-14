@@ -10,15 +10,24 @@
 #include <QSpinBox>
 #include <QGroupBox>
 #include <QProgressBar>
+#include <QProgressDialog>
 #include <QTextEdit>
 #include <QCheckBox>
 #include <QDoubleSpinBox>
+#include <QStatusBar>
 #include <memory>
 
+#include <QVector>
+#include <QPoint>
+#include <QImage>
+#include <QString>
+#include <QColor>
 #include "ImageReader.h"
 #include "ImageDisplayWidget.h"
-#include "StarMaskGenerator.h"
 #include "StarCatalogValidator.h"
+#include "IntegratedPlateSolver.h"
+#include "ImageReader.h"
+#include "StarMaskGenerator.h"
 #include "PixelMatchingDebugger.h" // Include the debugger header
 
 class MainWindow : public QMainWindow
@@ -30,6 +39,29 @@ public:
     ~MainWindow();
 
 private slots:
+    // Add to MainWindow.h private slots:
+  void onDetectStarsIntegratedVersion();
+  
+    void onExtractStarsWithPlatesolve();
+    void onPlatesolveStarted();
+    void onPlatesolveProgress(const QString& status);
+    void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    void onPlatesolveFailed(const QString& error);
+    void onToggleAutoPlatesolve(bool enabled);
+    void configurePlatesolverSettings();
+    void onWCSDataReceived(const WCSData& wcs);
+    
+    void initializePlatesolveIntegration();
+    void setupPlatesolveMenus();
+    void triggerPlatesolveWithCurrentStars();
+    void addPlatesolveIntegration();
+    //    void onExtractStarsWithPlatesolve();
+    //    void onPlatesolveStarted();
+    //    void onPlatesolveProgress(const QString& status);
+    //    void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    //    void onPlatesolveFailed(const QString& error);
+    //    void onToggleAutoPlatesolve(bool enabled);
+    //    void configurePlatesolverSettings();
     void onLoadImage();
     void onDetectStars();
     void onValidateStars();
@@ -59,7 +91,22 @@ private slots:
   //    void onAnalyzeMatchingCriteria();
   //    void onTestParameterSensitivity();
     void onDebugStarCorrelation();
+    void onWCSDataReceived();
 private:
+    StarMaskResult performStarExtraction();
+    void updateStarDisplay(const StarMaskResult& starMask);
+    void updateCoordinateDisplay(const WCSData& wcs);
+    void showCatalogValidationResults(const ValidationResult& validation);
+    void showCatalogValidationResults(const ExtractStarsWithPlateSolve* m_platesolveIntegration = nullptr);
+    const ImageData* m_imageData;
+    QLabel* m_statusLabel = nullptr;
+    QLabel* m_coordinateLabel = nullptr;
+    QTextEdit* m_resultsText = nullptr;
+    ImageDisplayWidget* m_imageDisplayWidget = nullptr;
+    //    void initializePlatesolveIntegration();
+    //    void setupPlatesolveMenus();
+    void extractStarsIntegrated();
+    
     void setupUI();
     void setupCatalogPlottingControls();  // NEW: Setup plotting controls
     void updateValidationControls();
@@ -95,6 +142,29 @@ private:
     void addTestButton();
     void quickDiagnoseCurrentMatches();
     void debugCurrentValidationResults();
+    void showPlatesolveResults(const PlatesolveResult& result);
+    void updateImageDisplayWithWCS(const WCSData& wcs);
+    void triggerCatalogValidation(const PlatesolveResult& result);
+    double calculateFieldRadius(const PlatesolveResult& result);
+    QString formatRACoordinates(double ra);
+    QString formatDecCoordinates(double dec);
+    
+    ExtractStarsWithPlateSolve* m_platesolveIntegration;
+    bool m_autoPlatesolveEnabled;
+    QProgressDialog* m_platesolveProgressDialog;
+    
+    QString m_astrometryPath;
+    QString m_indexPath;
+    double m_minScale;
+    double m_maxScale;
+    int m_platesolveTimeout;
+    int m_maxStarsForSolving;
+    
+    //    ExtractStarsWithPlateSolve* m_platesolveIntegration;
+    //    bool m_autoPlatesolveEnabled;
+    //    QProgressDialog* m_platesolveProgressDialog;
+    QAction* m_platesolveAction;
+    QAction* m_toggleAutoPlatesolveAction;
 
     std::unique_ptr<PixelMatchingDebugger> m_pixelDebugger;
   
@@ -126,16 +196,16 @@ private:
   //    QProgressBar* m_queryProgressBar;
     
     // Status display
-    QLabel* m_statusLabel;
-    QTextEdit* m_resultsText;
+    //    QLabel* m_statusLabel;
+    //    QTextEdit* m_resultsText;
     
     // Core components
     std::unique_ptr<ImageReader> m_imageReader;
     std::unique_ptr<StarCatalogValidator> m_catalogValidator;
-    ImageDisplayWidget* m_imageDisplayWidget;
+    //    ImageDisplayWidget* m_imageDisplayWidget;
     
     // Data
-    const ImageData* m_imageData;
+    //    const ImageData* m_imageData;
     StarMaskResult m_lastStarMask;
     ValidationResult m_lastValidation;
     
@@ -188,8 +258,7 @@ private:
     
     // Enhanced validation results
     EnhancedValidationResult m_lastEnhancedValidation;
-    bool m_enhancedValidationComplete;
-  
+    bool m_enhancedValidationComplete;  
 };
 
 #endif // MAINWINDOW_H

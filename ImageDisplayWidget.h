@@ -12,10 +12,20 @@
 #include <QCheckBox>
 #include <QFrame>
 #include <QPixmap>
+#include "StarCatalogValidator.h"
 
 struct ImageData;
 struct ValidationResult;
 struct CatalogStar;
+
+// Additional StarOverlay structure for ImageDisplayWidget
+struct StarOverlay {
+    QPoint center;
+    float radius;
+    float flux;
+    QColor color = Qt::green;
+    bool visible = true;
+};
 
 class ImageDisplayWidget : public QWidget
 {
@@ -51,6 +61,11 @@ public:
     void setValidationOverlayVisible(bool visible);
     bool isCatalogOverlayVisible() const { return m_showCatalog; }
     bool isValidationOverlayVisible() const { return m_showValidation; }
+    // Add these method declarations
+    void setWCSData(const WCSData& wcs);
+    void setWCSOverlayEnabled(bool enabled);
+    void clearStarOverlays();
+    void addStarOverlay(const QPoint& center, float radius, float flux);
 
 signals:
     void imageClicked(int x, int y, float value);
@@ -84,6 +99,10 @@ private:
     void drawStarOverlay(QPainter& painter, double xScale, double yScale);
     void drawCatalogOverlay(QPainter& painter, double xScale, double yScale);
     void drawValidationOverlay(QPainter& painter, double xScale, double yScale);
+
+    WCSData m_wcsData;
+    bool m_wcsOverlayEnabled = false;
+    QVector<StarOverlay> m_starOverlays;
     
     // UI components
     QVBoxLayout* m_mainLayout;

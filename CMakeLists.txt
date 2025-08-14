@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address") 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
 
 # Find Qt6
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
@@ -210,6 +213,8 @@ set(SOURCES
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
     StarMaskGenerator.cpp
+    IntegratedPlateSolver.cpp
+    PlatesolverSettingsDialog.cpp
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
@@ -257,6 +262,9 @@ target_include_directories(StarMaskDemo PRIVATE
     /opt/homebrew/Cellar/qt/6.9.0/lib/QtNetwork.framework/Versions/A/Headers
 )
 
+set(ASTROMETRY_PREFIX /usr/local/astrometry) 
+set(HOMEBREW_PREFIX /opt/homebrew) 
+
 # Link libraries
 target_link_libraries(StarMaskDemo PRIVATE
     Qt6::Core
@@ -271,6 +279,16 @@ target_link_libraries(StarMaskDemo PRIVATE
     ${CRYPTO_LIBRARY}
     ${TIFF_LIBRARY}
     ${CURL_LIBRARY}
+    ${ASTROMETRY_PREFIX}/lib/libastrometry.a
+#    ${ASTROMETRY_PREFIX}/lib/libasan.a
+    ${ASTROMETRY_PREFIX}/lib/libanfiles.a
+    ${ASTROMETRY_PREFIX}/lib/libkd.a
+    ${ASTROMETRY_PREFIX}/lib/libanutils.a
+    ${ASTROMETRY_PREFIX}/lib/libanbase.a
+    ${ASTROMETRY_PREFIX}/lib/libqfits.a
+    ${HOMEBREW_PREFIX}/lib/libgsl.a
+    ${HOMEBREW_PREFIX}/lib/libgslcblas.a
+    ${HOMEBREW_PREFIX}/lib/libwcs.a
     z
 )
 

@@ -836,3 +836,32 @@ void ImageDisplayWidget::mousePressEvent(QMouseEvent* event)
     
     QWidget::mousePressEvent(event);
 }
+
+
+// Add these method implementations to ImageDisplayWidget.cpp:
+void ImageDisplayWidget::setWCSData(const WCSData& wcs)
+{
+    m_wcsData = wcs;
+    update(); // Trigger repaint
+}
+
+void ImageDisplayWidget::setWCSOverlayEnabled(bool enabled)
+{
+    m_wcsOverlayEnabled = enabled;
+    update(); // Trigger repaint
+}
+
+void ImageDisplayWidget::clearStarOverlays()
+{
+    m_starOverlays.clear();
+    update();
+}
+
+void ImageDisplayWidget::addStarOverlay(const QPoint& center, float radius, float flux)
+{
+    StarOverlay overlay;
+    overlay.center = center;
+    overlay.radius = radius;
+    overlay.flux = flux;
+    m_starOverlays.append(overlay);
+}
