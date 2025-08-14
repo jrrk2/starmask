@@ -262,7 +262,7 @@ target_include_directories(StarMaskDemo PRIVATE
     /opt/homebrew/Cellar/qt/6.9.0/lib/QtNetwork.framework/Versions/A/Headers
 )
 
-set(ASTROMETRY_PREFIX /usr/local/astrometry) 
+set(ASTROMETRY_PREFIX /opt/homebrew) 
 set(HOMEBREW_PREFIX /opt/homebrew) 
 
 # Link libraries

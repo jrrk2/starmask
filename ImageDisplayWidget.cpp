@@ -107,7 +107,7 @@ void ImageDisplayWidget::setupUI()
     m_showStarsCheck->setToolTip("Toggle star detection overlay");
     connect(m_showStarsCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowStarsToggled);
     m_controlLayout->addWidget(m_showStarsCheck);
-    
+    /*    
     // Stretch controls
     m_autoStretchButton = new QPushButton("Auto Stretch");
     m_autoStretchButton->setCheckable(true);
@@ -146,7 +146,7 @@ void ImageDisplayWidget::setupUI()
     m_controlLayout->addWidget(m_maxSpinBox);
     
     m_mainLayout->addWidget(controlGroup);
-    
+    */
     // Image display area
     m_scrollArea = new QScrollArea;
     m_scrollArea->setBackgroundRole(QPalette::Dark);
@@ -169,7 +169,7 @@ void ImageDisplayWidget::setupUI()
     m_mainLayout->addWidget(m_scrollArea, 1);
     
     // Initial state
-    onAutoStretchToggled(m_autoStretchEnabled);
+    //    onAutoStretchToggled(m_autoStretchEnabled);
 }
 
 // Add new overlay control methods:
@@ -515,7 +515,7 @@ double ImageDisplayWidget::zoomFactor() const
 {
     return m_zoomFactor;
 }
-
+/*
 void ImageDisplayWidget::setAutoStretch(bool enabled)
 {
     if (enabled != m_autoStretchEnabled) {
@@ -557,7 +557,7 @@ void ImageDisplayWidget::getStretchLimits(double& minValue, double& maxValue) co
     minValue = m_stretchMin;
     maxValue = m_stretchMax;
 }
-
+*/
 void ImageDisplayWidget::wheelEvent(QWheelEvent* event)
 {
     if (event->modifiers() & Qt::ControlModifier) {
@@ -598,7 +598,7 @@ void ImageDisplayWidget::onZoom100Clicked()
 {
     setZoomFactor(1.0);
 }
-
+/*
 void ImageDisplayWidget::onAutoStretchToggled(bool enabled)
 {
     m_autoStretchEnabled = enabled;
@@ -642,7 +642,7 @@ void ImageDisplayWidget::onStretchChanged()
         updateDisplay();
     }
 }
-
+*/
 void ImageDisplayWidget::updateZoomControls()
 {
     m_zoomLabel->setText(QString("%1%").arg(static_cast<int>(m_zoomFactor * 100)));

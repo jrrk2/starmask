@@ -83,8 +83,8 @@ private slots:
     void onZoomOutClicked();
     void onZoomFitClicked();
     void onZoom100Clicked();
-    void onAutoStretchToggled(bool enabled);
-    void onStretchChanged();
+  //    void onAutoStretchToggled(bool enabled);
+  //    void onStretchChanged();
     void onShowStarsToggled(bool show);
     void onShowCatalogToggled(bool show);
     void onShowValidationToggled(bool show);
@@ -121,7 +121,7 @@ private:
     QCheckBox* m_showStarsCheck;
     QCheckBox* m_showCatalogCheck;
     QCheckBox* m_showValidationCheck;
-    
+  /*    
     // Stretch controls
     QPushButton* m_autoStretchButton;
     QLabel* m_minLabel;
@@ -130,7 +130,7 @@ private:
     QLabel* m_maxLabel;
     QSlider* m_maxSlider;
     QSpinBox* m_maxSpinBox;
-    
+  */    
     // Data
     std::unique_ptr<ImageData> m_ownedImageData;  // Own the data
     const ImageData* m_imageData;
