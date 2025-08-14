@@ -216,6 +216,7 @@ set(SOURCES
     IntegratedPlateSolver.cpp
     PlatesolverSettingsDialog.cpp
     AstrometryDirectSolver.cpp
+    SimplePlatesolver.cpp
     ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
@@ -234,6 +235,7 @@ set(HEADERS
     MainWindow.h
     PixelMatchingDebugger.h
     SimplifiedXISFWriter.h
+    SimplePlatesolver.h
     StarCatalogValidator.h
     StarCorrelator.h
     StarMaskGenerator.h

@@ -25,7 +25,8 @@
 #include "ImageReader.h"
 #include "ImageDisplayWidget.h"
 #include "StarCatalogValidator.h"
-#include "IntegratedPlateSolver.h"
+// #include "IntegratedPlateSolver.h"
+#include "SimplePlatesolver.h"
 #include "ImageReader.h"
 #include "StarMaskGenerator.h"
 #include "PixelMatchingDebugger.h" // Include the debugger header
@@ -97,7 +98,8 @@ private:
     void updateStarDisplay(const StarMaskResult& starMask);
     void updateCoordinateDisplay(const WCSData& wcs);
     void showCatalogValidationResults(const ValidationResult& validation);
-    void showCatalogValidationResults(const ExtractStarsWithPlateSolve* m_platesolveIntegration = nullptr);
+  //    void showCatalogValidationResults(const ExtractStarsWithPlateSolve* m_platesolveIntegration = nullptr);
+    void showCatalogValidationResults(const SimplePlatesolver* m_platesolveIntegration = nullptr);
     const ImageData* m_imageData;
     QLabel* m_statusLabel = nullptr;
     QLabel* m_coordinateLabel = nullptr;
@@ -150,7 +152,8 @@ private:
     QString formatRACoordinates(double ra);
     QString formatDecCoordinates(double dec);
     
-    ExtractStarsWithPlateSolve* m_platesolveIntegration;
+  //    ExtractStarsWithPlateSolve* m_platesolveIntegration;
+    SimplePlatesolver* m_platesolveIntegration;
     QProgressDialog* m_platesolveProgressDialog;
     
     QString m_astrometryPath;

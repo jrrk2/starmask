@@ -29,7 +29,8 @@
 void MainWindow::initializePlatesolveIntegration()
 {
     // Initialize the plate solving integration
-    m_platesolveIntegration = new ExtractStarsWithPlateSolve(this);
+  //    m_platesolveIntegration = new ExtractStarsWithPlateSolve(this);
+    m_platesolveIntegration = new SimplePlatesolver(this);
     m_platesolveProgressDialog = nullptr;
     
     // Default settings - adjust paths for your system
@@ -49,16 +50,21 @@ void MainWindow::initializePlatesolveIntegration()
     }
     
     // Connect signals
-    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveStarted,
+    //    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveStarted,
+    connect(m_platesolveIntegration, &SimplePlatesolver::platesolveStarted,
             this, &MainWindow::onPlatesolveStarted);
-    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveProgress,
+    //    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveProgress,
+    connect(m_platesolveIntegration, &SimplePlatesolver::platesolveProgress,
             this, &MainWindow::onPlatesolveProgress);
-    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveComplete,
+    //    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveComplete,
+    connect(m_platesolveIntegration, &SimplePlatesolver::platesolveComplete,
             this, &MainWindow::onPlatesolveComplete);
-    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveFailed,
+    //    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveFailed,
+    connect(m_platesolveIntegration, &SimplePlatesolver::platesolveFailed,
             this, &MainWindow::onPlatesolveFailed);  
     // CORRECT:
-    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::wcsDataAvailable,
+    //    connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::wcsDataAvailable,
+    connect(m_platesolveIntegration, &SimplePlatesolver::wcsDataAvailable,
         this, [this](const WCSData& wcs) {
             this->onWCSDataReceived(wcs);
         });
@@ -1452,8 +1458,6 @@ void MainWindow::setupUI()
 // Update your onLoadImage method to enable star detection controls
 void MainWindow::onLoadImage()
 {
-    pcl_mock::InitializeMockAPI();
-    
     QString filePath = QFileDialog::getOpenFileName(
         this,
         "Open Image File",
@@ -2976,9 +2980,11 @@ void MainWindow::onTestPlatesolveWithStarExtraction()
     // Force plate solving even if auto-solve is disabled
     if (m_platesolveIntegration) {
         // Connect to result signals temporarily for this test
-        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveComplete,
+      //        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveComplete,
+        connect(m_platesolveIntegration, &SimplePlatesolver::platesolveComplete,
                 this, &MainWindow::onTestPlatesolveComplete, Qt::UniqueConnection);
-        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveFailed,
+	//        connect(m_platesolveIntegration, &ExtractStarsWithPlateSolve::platesolveFailed,
+        connect(m_platesolveIntegration, &SimplePlatesolver::platesolveFailed,
                 this, &MainWindow::onTestPlateSolveFailed, Qt::UniqueConnection);
         
         // Trigger plate solving
