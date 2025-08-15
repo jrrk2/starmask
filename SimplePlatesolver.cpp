@@ -349,12 +349,29 @@ void SimplePlatesolver::onProcessFinished(int exitCode, QProcess::ExitStatus exi
         wcs.cd12 = cd1_2;
         wcs.cd21 = cd2_1;
         wcs.cd22 = cd2_2;
-	/*
-        wcs.pixscale = result.pixscale;
-	wcs.rotation = result.orientation;
-	wcs.imageWidth = m_currentImageWidth;
-	wcs.imageHeight = m_currentImageHeight;
-	*/
+        wcs.pixscale = result.Resolution() * 3600.0;
+	// Calculate rotation from both axes and average
+	double rot1 = atan2(cd1_2, cd1_1) * 180.0 / M_PI;
+	double rot2 = atan2(-cd2_1, cd2_2) * 180.0 / M_PI;
+
+	// Check for parity flip (determinant of CD matrix)
+	double determinant = cd1_1 * cd2_2 - cd1_2 * cd2_1;
+	bool flipped = determinant < 0;
+
+	if (flipped) {
+	    qDebug() << "Warning: Image appears to be flipped (negative determinant)";
+	    rot2 += 180.0;  // Adjust for flip
+	}
+
+	// Average the two rotation measurements
+	wcs.orientation = (rot1 + rot2) / 2.0;
+
+	// Normalize to 0-360 degrees
+	while (wcs.orientation < 0) wcs.orientation += 360.0;
+	while (wcs.orientation >= 360.0) wcs.orientation -= 360.0;
+
+	wcs.width = result.Width();
+	wcs.height = result.Height();
         wcs.isValid = true;
         
         emit platesolveComplete(result, wcs);

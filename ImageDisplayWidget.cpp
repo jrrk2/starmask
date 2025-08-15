@@ -380,7 +380,7 @@ void ImageDisplayWidget::drawValidationOverlay(QPainter& painter, double xScale,
         painter.setPen(QPen(Qt::white, 1));
         painter.setBrush(QColor(0, 0, 0, 200));
         
-        QString statsText = QString("Matches: %1/%2 (%.1f%%)\nAvg Error: %.2f px\nRMS Error: %.2f px")
+        QString statsText = QString("Matches: %1/%2 (%3%%)\nAvg Error: %4 px\nRMS Error: %5 px")
                           .arg(m_validationResults->totalMatches)
                           .arg(m_validationResults->totalDetected)
                           .arg(m_validationResults->matchPercentage)
@@ -821,13 +821,13 @@ void ImageDisplayWidget::mousePressEvent(QMouseEvent* event)
                                          pow(star.pixelPos.y() - imageY, 2));
                     
                     if (distance < 20.0) { // Within 20 pixels
-                        nearbyStars += QString("\nNearby: %1 (mag %.1f, %.1fpx away)")
+                        nearbyStars += QString("\nNearby: %1 (mag %2, %3px away)")
                                       .arg(star.id).arg(star.magnitude).arg(distance);
                     }
                 }
             }
             
-            qDebug() << QString("Clicked: (%1, %2) value=%.3f%3")
+            qDebug() << QString("Clicked: (%1, %2) value=%3%4")
                         .arg(imageX).arg(imageY).arg(pixelValue).arg(nearbyStars);
             
             emit imageClicked(imageX, imageY, pixelValue);

@@ -374,6 +374,7 @@ public:
     }
     int getWidth() { return m_astrometricMetadata.Width(); }
     int getHeight() { return m_astrometricMetadata.Height(); }
+    void setMetadata(pcl::AstrometricMetadata rslt) { m_astrometricMetadata = rslt; }
   
 signals:
     void catalogQueryStarted();
@@ -400,7 +401,7 @@ private:
 
     // Replace complex WCS handling with PCL's high-level class
     pcl::AstrometricMetadata m_astrometricMetadata;
-    bool m_hasAstrometricData = false;
+  //    bool m_hasAstrometricData = false;
     
     // Helper methods
     void testAstrometricMetadata() const;

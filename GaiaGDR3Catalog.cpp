@@ -49,18 +49,18 @@ QString GaiaGDR3Catalog::getCatalogInfo()
     QFileInfo info(s_catalogPath);
     double sizeMB = info.size() / (1024.0 * 1024.0);
     
-    QString result = QString("Gaia GDR3 catalog: %1 (%.1f MB)")
+    QString result = QString("Gaia GDR3 catalog: %1 (%2 MB)")
                     .arg(info.fileName()).arg(sizeMB);
     
     if (initializeDatabase() && s_database) {
         try {
             result += QString("\nData release: %1")
                      .arg(QString::fromStdString(s_database->DataRelease().c_str()));
-            result += QString("\nMagnitude range: [%.1f, %.1f]")
+            result += QString("\nMagnitude range: [%1, %2]")
                      .arg(s_database->MagnitudeLow()).arg(s_database->MagnitudeHigh());
             
             if (s_database->HasMeanSpectrumData()) {
-                result += QString("\nBP/RP spectra: Available (%1 wavelengths, %.1f-%.1f nm)")
+                result += QString("\nBP/RP spectra: Available (%1 wavelengths, %2-%3 nm)")
                          .arg(s_database->SpectrumCount())
                          .arg(s_database->SpectrumStart())
                          .arg(s_database->SpectrumStart() + s_database->SpectrumCount() * s_database->SpectrumStep());
@@ -142,7 +142,7 @@ QVector<GaiaGDR3Catalog::Star> GaiaGDR3Catalog::queryRegion(const SearchParamete
         return stars;
     }
     
-    qDebug() << QString("🔍 Querying Gaia GDR3: RA=%.4f° Dec=%.4f° radius=%.2f° mag≤%.1f")
+    qDebug() << QString("🔍 Querying Gaia GDR3: RA=%1° Dec=%2° radius=%3° mag≤%4")
                 .arg(params.centerRA).arg(params.centerDec)
                 .arg(params.radiusDegrees).arg(params.maxMagnitude);
     
@@ -169,9 +169,9 @@ QVector<GaiaGDR3Catalog::Star> GaiaGDR3Catalog::queryRegion(const SearchParamete
         // Perform the search
         s_database->Search(searchData);
         
-        qDebug() << QString("📊 Gaia search completed in %.1f ms")
+        qDebug() << QString("📊 Gaia search completed in %1 ms")
                     .arg(searchData.timeTotal * 1000.0);
-        qDebug() << QString("📊 Decode time: %.1f ms")
+        qDebug() << QString("📊 Decode time: %1 ms")
                     .arg(searchData.timeDecode * 1000.0);
         qDebug() << QString("📊 Raw results: %1 stars")
                     .arg(searchData.stars.Length());
@@ -234,8 +234,8 @@ QVector<GaiaGDR3Catalog::Star> GaiaGDR3Catalog::queryRegion(const SearchParamete
                 if (star.hasSpectrum) withSpectra++;
             }
             
-            qDebug() << QString("📊 Magnitude range: %.2f to %.2f").arg(brightestMag).arg(faintestMag);
-            qDebug() << QString("📊 Stars with BP/RP spectra: %1 (%.1f%%)")
+            qDebug() << QString("📊 Magnitude range: %1 to %2").arg(brightestMag).arg(faintestMag);
+            qDebug() << QString("📊 Stars with BP/RP spectra: %1 (%2%%)")
                         .arg(withSpectra).arg(100.0 * withSpectra / stars.size());
         }
         
@@ -390,7 +390,7 @@ void GaiaGDR3Catalog::testPerformance(double centerRA, double centerDec, double 
                 .arg(stars.size()).arg(elapsed);
     
     if (!stars.isEmpty()) {
-        qDebug() << QString("📊 Search rate: %.1f stars/second")
+        qDebug() << QString("📊 Search rate: %1 stars/second")
                     .arg(stars.size() * 1000.0 / elapsed);
     }
 }

@@ -204,7 +204,8 @@ void MainWindow::onPlatesolveComplete(const pcl::AstrometricMetadata & result, c
     
     // Set WCS flag
     m_hasWCS = true;
-
+    m_catalogValidator->setMetadata(result);
+    
     // Update results display
     QString resultsText = QString(
         "Plate Solving Results\n"
@@ -2771,43 +2772,10 @@ void MainWindow::triggerCatalogValidation(const pcl::AstrometricMetadata& result
 double MainWindow::calculateFieldRadius(const pcl::AstrometricMetadata& result)
 {
     // Calculate field diagonal in degrees
-        WCSData wcs;
-	pcl::DPoint centerCoords;
-	pcl::DPoint center, right, up;
-	double centerX = result.Width() * 0.5;
-	double centerY = result.Height() * 0.5;
-	double delta = 1.0; // 1 pixel offset
-	result.ImageCenterToCelestial(centerCoords);
-        wcs.crval1 = centerCoords.x;
-        wcs.crval2 = centerCoords.y;
-        wcs.crpix1 = centerX;
-        wcs.crpix2 = centerY;
-	result.ImageToCelestial(center, pcl::DPoint(centerX, centerY));
-	result.ImageToCelestial(right,  pcl::DPoint(centerX + delta, centerY));
-        result.ImageToCelestial(up,     pcl::DPoint(centerX, centerY + delta));
-        
-        // Calculate CD matrix elements
-        double cd1_1 = (right.x - center.x) / delta;  // dRA/dX
-        double cd1_2 = (up.x - center.x) / delta;     // dRA/dY  
-        double cd2_1 = (right.y - center.y) / delta;  // dDec/dX
-        double cd2_2 = (up.y - center.y) / delta;     // dDec/dY
-        
-        // Handle RA wraparound near 0/360 boundary
-        if (abs(cd1_1) > 180) cd1_1 = cd1_1 > 0 ? cd1_1 - 360 : cd1_1 + 360;
-        if (abs(cd1_2) > 180) cd1_2 = cd1_2 > 0 ? cd1_2 - 360 : cd1_2 + 360;
-
-        wcs.cd11 = cd1_1;
-        wcs.cd12 = cd1_2;
-        wcs.cd21 = cd2_1;
-        wcs.cd22 = cd2_2;
-	wcs.pixscale = sqrt(cd1_1*cd1_1 + cd1_2*cd1_2) * 3600.0;
 	
-    if (m_imageData) {
-        double widthDeg = (m_imageData->width * wcs.pixscale) / 3600.0;
-        double heightDeg = (m_imageData->height * wcs.pixscale) / 3600.0;
-        return sqrt(widthDeg * widthDeg + heightDeg * heightDeg) / 2.0;
-    }
-    return 1.0; // Default 1 degree radius
+  double widthDeg = (result.Width() * result.Resolution()) / 3600.0;
+  double heightDeg = (result.Height() * result.Resolution()) / 3600.0;
+  return sqrt(widthDeg * widthDeg + heightDeg * heightDeg) / 2.0;
 }
 
 QString MainWindow::formatRACoordinates(double ra)

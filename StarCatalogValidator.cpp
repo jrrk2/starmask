@@ -1058,7 +1058,7 @@ void StarCatalogValidator::initializeGaiaDR3()
 // Update the main queryCatalog method to use Gaia
 void StarCatalogValidator::queryCatalog(double centerRA, double centerDec, double radiusDegrees)
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         emit errorSignal("No valid WCS data available for catalog query");
         return;
     }
@@ -1469,7 +1469,7 @@ void StarCatalogValidator::setWCSFromMetadata(const QStringList& metadata)
 
 void StarCatalogValidator::updateWCSMatrix()
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         m_wcsMatrixValid = false;
         return;
     }
@@ -1498,7 +1498,7 @@ static size_t writeCallback(void* contents, size_t size, size_t nmemb, void* use
 
 void StarCatalogValidator::queryGaiaCatalog(double centerRA, double centerDec, double radiusDegrees)
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         emit errorSignal("No valid WCS data available for catalog query");
         return;
     }
@@ -1632,7 +1632,7 @@ double StarCatalogValidator::parseCoordinate(const QString& coordStr, bool isRA)
 ValidationResult StarCatalogValidator::validateStars(const QVector<QPoint>& detectedStars, 
                                                    const QVector<float>& starRadii)
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         ValidationResult result;
         result.summary = "No valid WCS data available";
         emit errorSignal(result.summary);
@@ -1946,10 +1946,7 @@ bool StarCatalogValidator::setWCSFromImageMetadata(const ImageData& imageData)
             m_astrometricMetadata.Build(emptyProperties, keywords, 
                                        imageData.width, imageData.height);
             
-            // Check if the astrometric solution is valid
-            m_hasAstrometricData = m_astrometricMetadata.IsValid();
-            
-            if (m_hasAstrometricData) {
+            if (m_astrometricMetadata.IsValid()) {
                     qDebug() << "✅ PCL AstrometricMetadata setup successful!";
 //                  qDebug() << "  Image center: RA=" << centerWorld.x << "° Dec=" << centerWorld.y << "°";
                     qDebug() << "  Resolution:" << getPixScale() << "arcsec/pixel";
@@ -1974,7 +1971,6 @@ bool StarCatalogValidator::setWCSFromImageMetadata(const ImageData& imageData)
             
         } catch (const pcl::Error& e) {
             qDebug() << "❌ PCL AstrometricMetadata.Build() failed:" << e.Message().c_str();
-            m_hasAstrometricData = false;
         }
         
         return false;
@@ -1999,10 +1995,7 @@ bool StarCatalogValidator::setWCSFromSolver(pcl::FITSKeywordArray keywords, int 
             m_astrometricMetadata.Build(emptyProperties, keywords, 
                                        width, height);
             
-            // Check if the astrometric solution is valid
-            m_hasAstrometricData = m_astrometricMetadata.IsValid();
-            
-            if (m_hasAstrometricData) {
+            if (m_astrometricMetadata.IsValid()) {
                     qDebug() << "✅ PCL AstrometricMetadata setup successful!";
                     qDebug() << "  Resolution:" << getPixScale() << "arcsec/pixel";
                     qDebug() << "  Image size:"
@@ -2026,7 +2019,6 @@ bool StarCatalogValidator::setWCSFromSolver(pcl::FITSKeywordArray keywords, int 
             
         } catch (const pcl::Error& e) {
             qDebug() << "❌ PCL AstrometricMetadata.Build() failed:" << e.Message().c_str();
-            m_hasAstrometricData = false;
         }
         
         return false;
@@ -2042,7 +2034,7 @@ bool StarCatalogValidator::setWCSFromSolver(pcl::FITSKeywordArray keywords, int 
 
 void StarCatalogValidator::testAstrometricMetadata() const
 {
-    if (!m_hasAstrometricData) return;
+    if (!m_astrometricMetadata.IsValid()) return;
     
     qDebug() << "\n=== Testing PCL AstrometricMetadata ===";
     
@@ -2177,7 +2169,7 @@ void StarCatalogValidator::testAstrometricMetadata() const
 // Simplified coordinate transformation methods using PCL's high-level API
 QPointF StarCatalogValidator::skyToPixel(double ra, double dec) const
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         return QPointF(-1, -1);
     }
     
@@ -2198,7 +2190,7 @@ QPointF StarCatalogValidator::skyToPixel(double ra, double dec) const
 
 QPointF StarCatalogValidator::pixelToSky(double x, double y) const
 {
-    if (!m_hasAstrometricData) {
+    if (!m_astrometricMetadata.IsValid()) {
         return QPointF(-1, -1);
     }
     
@@ -2220,14 +2212,9 @@ QPointF StarCatalogValidator::pixelToSky(double x, double y) const
 // Update your other methods
 bool StarCatalogValidator::hasValidWCS() const 
 { 
-    return m_hasAstrometricData && m_astrometricMetadata.IsValid(); 
+    return m_astrometricMetadata.IsValid() && m_astrometricMetadata.IsValid(); 
 }
-/*
-WCSData StarCatalogValidator::getWCSData() const 
-{ 
-    return m_wcsData; 
-}
-*/
+
 // Update StarCatalogValidator to use the local bright star database
 void StarCatalogValidator::addBrightStarsFromDatabase(double centerRA, double centerDec, double radiusDegrees)
 {
@@ -2311,7 +2298,7 @@ void StarCatalogValidator::showWCSInfoFromPCL()
 {
     qDebug() << "\n=== WCS INFO FROM PCL ASTROMETRICMETADATA ===";
     
-    if (!m_hasAstrometricData || !m_astrometricMetadata.IsValid()) {
+    if (!m_astrometricMetadata.IsValid()) {
         qDebug() << "❌ No valid astrometric metadata available";
         return;
     }
@@ -2502,7 +2489,7 @@ void StarCatalogValidator::displayPCLSpecificInfo()
                 
                 double xWIErr, yWIErr, xIWErr, yIWErr;
                 splineTransform->GetSplineErrors(xWIErr, yWIErr, xIWErr, yIWErr);
-                qDebug() << QString("Spline Errors: WI(%.3f,%.3f) IW(%.3f,%.3f) px")
+                qDebug() << QString("Spline Errors: WI(%1,%2) IW(%3,%4) px")
                             .arg(xWIErr).arg(yWIErr).arg(xIWErr).arg(yIWErr);
             }
         }
@@ -2545,7 +2532,7 @@ void StarCatalogValidator::displayPCLSpecificInfo()
 // Alternative simpler version if you just want basic info
 void StarCatalogValidator::showBasicWCSInfoFromPCL()
 {
-    if (!m_hasAstrometricData || !m_astrometricMetadata.IsValid()) {
+    if (!m_astrometricMetadata.IsValid()) {
         qDebug() << "No valid WCS information available";
         return;
     }

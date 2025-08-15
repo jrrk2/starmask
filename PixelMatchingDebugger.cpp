@@ -33,7 +33,7 @@ void PixelMatchingDebugger::identifyProblematicMatches()
         if (diag.pixelDistance <= m_currentPixelTolerance && !diag.passesOverallCheck) {
             closeButFailing++;
             if (closeButFailing <= 3) { // Show first few cases
-                qDebug() << QString("⚠️  Close but failing: det[%1] -> cat[%2] %3, dist=%.2f px")
+                qDebug() << QString("⚠️  Close but failing: det[%1] -> cat[%2] %3, dist=%4 px")
                             .arg(diag.detectedIndex).arg(diag.catalogIndex)
                             .arg(diag.catalogId).arg(diag.pixelDistance);
                 qDebug() << QString("    Reasons: %1").arg(diag.failureReasons.join(", "));
@@ -43,7 +43,7 @@ void PixelMatchingDebugger::identifyProblematicMatches()
         // Far matches that somehow pass
         if (diag.pixelDistance > m_currentPixelTolerance * 1.5 && diag.passesOverallCheck) {
             farButPassing++;
-            qDebug() << QString("⚠️  Far but passing: det[%1] -> cat[%2] %3, dist=%.2f px")
+            qDebug() << QString("⚠️  Far but passing: det[%1] -> cat[%2] %3, dist=%4 px")
                         .arg(diag.detectedIndex).arg(diag.catalogIndex)
                         .arg(diag.catalogId).arg(diag.pixelDistance);
         }
@@ -52,7 +52,7 @@ void PixelMatchingDebugger::identifyProblematicMatches()
         if (diag.shouldVisuallyMatch && !diag.passesOverallCheck) {
             shouldMatchButDont++;
             if (shouldMatchButDont <= 5) {
-                qDebug() << QString("🎯 Visual mismatch: det[%1] -> cat[%2] %3, dist=%.2f px")
+                qDebug() << QString("🎯 Visual mismatch: det[%1] -> cat[%2] %3, dist=%4 px")
                             .arg(diag.detectedIndex).arg(diag.catalogIndex)
                             .arg(diag.catalogId).arg(diag.pixelDistance);
                 qDebug() << QString("    Should match visually but fails: %1")
@@ -124,9 +124,9 @@ void PixelMatchingDebugger::analyzeMatchingQuality()
         double avgDistance = std::accumulate(allDistances.begin(), allDistances.end(), 0.0) / allDistances.size();
         
         qDebug() << QString("Distance quality metrics:");
-        qDebug() << QString("  Range: %.2f - %.2f px").arg(minDistance).arg(maxDistance);
-        qDebug() << QString("  Quartiles: Q25=%.2f, Median=%.2f, Q75=%.2f px").arg(q25).arg(medianDistance).arg(q75);
-        qDebug() << QString("  Average: %.2f px").arg(avgDistance);
+        qDebug() << QString("  Range: %1 - %2 px").arg(minDistance).arg(maxDistance);
+        qDebug() << QString("  Quartiles: Q25=%1, Median=%2, Q75=3 px").arg(q25).arg(medianDistance).arg(q75);
+        qDebug() << QString("  Average: %1 px").arg(avgDistance);
         
         // Quality assessment
         if (medianDistance <= 3.0) {
@@ -143,13 +143,13 @@ void PixelMatchingDebugger::analyzeMatchingQuality()
     // Efficiency analysis
     qDebug() << QString("Matching efficiency:");
     if (totalPotential > 0) {
-        qDebug() << QString("  Search efficiency: %1/%2 (%.1f%%) within search radius")
+        qDebug() << QString("  Search efficiency: %1/%2 (%3%%) within search radius")
                     .arg(withinSearchRadius).arg(totalPotential).arg(100.0 * withinSearchRadius / totalPotential);
-        qDebug() << QString("  Distance efficiency: %1/%2 (%.1f%%) pass distance criteria")
+        qDebug() << QString("  Distance efficiency: %1/%2 (%3%%) pass distance criteria")
                     .arg(passDistance).arg(totalPotential).arg(100.0 * passDistance / totalPotential);
-        qDebug() << QString("  Magnitude efficiency: %1/%2 (%.1f%%) pass magnitude criteria")
+        qDebug() << QString("  Magnitude efficiency: %1/%2 (%3%%) pass magnitude criteria")
                     .arg(passMagnitude).arg(totalPotential).arg(100.0 * passMagnitude / totalPotential);
-        qDebug() << QString("  Overall efficiency: %1/%2 (%.1f%%) pass all criteria")
+        qDebug() << QString("  Overall efficiency: %1/%2 (%3%%) pass all criteria")
                     .arg(passOverall).arg(totalPotential).arg(100.0 * passOverall / totalPotential);
     }
     
@@ -213,19 +213,19 @@ void PixelMatchingDebugger::examineSpecificMatch(int detectedIndex, int catalogI
     qDebug() << QString("Match details:");
     qDebug() << QString("  Detected position: (%1, %2)")
                 .arg(targetDiag->detectedPos.x()).arg(targetDiag->detectedPos.y());
-    qDebug() << QString("  Catalog position: (%.2f, %.2f)")
+    qDebug() << QString("  Catalog position: (%1, %2)")
                 .arg(targetDiag->catalogPos.x()).arg(targetDiag->catalogPos.y());
     qDebug() << QString("  Catalog ID: %1").arg(targetDiag->catalogId);
-    qDebug() << QString("  Catalog magnitude: %.2f").arg(targetDiag->magnitude);
+    qDebug() << QString("  Catalog magnitude: %2").arg(targetDiag->magnitude);
     
     qDebug() << QString("Distance analysis:");
-    qDebug() << QString("  Pixel distance: %.3f px").arg(targetDiag->pixelDistance);
-    qDebug() << QString("  Current tolerance: %.1f px").arg(m_currentPixelTolerance);
+    qDebug() << QString("  Pixel distance: %1 px").arg(targetDiag->pixelDistance);
+    qDebug() << QString("  Current tolerance: %1 px").arg(m_currentPixelTolerance);
     qDebug() << QString("  Passes distance check: %1").arg(targetDiag->passesDistanceCheck ? "YES" : "NO");
     
     qDebug() << QString("Magnitude analysis:");
-    qDebug() << QString("  Magnitude difference: %.3f").arg(targetDiag->magnitudeDiff);
-    qDebug() << QString("  Current tolerance: %.1f").arg(m_currentMagnitudeTolerance);
+    qDebug() << QString("  Magnitude difference: %1").arg(targetDiag->magnitudeDiff);
+    qDebug() << QString("  Current tolerance: %1").arg(m_currentMagnitudeTolerance);
     qDebug() << QString("  Passes magnitude check: %1").arg(targetDiag->passesMagnitudeCheck ? "YES" : "NO");
     
     qDebug() << QString("Overall result:");
@@ -295,7 +295,7 @@ void PixelMatchingDebugger::findNearestCatalogStar(const QPoint& detectedPos, in
     
     for (int i = 0; i < std::min(10, (int)(nearbyStars.size())); ++i) {
         const auto& star = nearbyStars[i];
-        qDebug() << QString("  %1. %2: (%.1f, %.1f) dist=%.2f px, mag=%.1f")
+        qDebug() << QString("  %1. %2: (%3, %4) dist=%5 px, mag=%6")
                     .arg(i + 1).arg(star.catalogId)
                     .arg(star.catalogPos.x()).arg(star.catalogPos.y())
                     .arg(star.distance).arg(star.magnitude);
@@ -313,7 +313,7 @@ void PixelMatchingDebugger::findNearestCatalogStar(const QPoint& detectedPos, in
 
 void PixelMatchingDebugger::listAllMatchesInRadius(const QPoint& center, double radius)
 {
-    qDebug() << QString("\n=== ALL MATCHES WITHIN %.1f px OF (%2, %3) ===")
+    qDebug() << QString("\n=== ALL MATCHES WITHIN %1 px OF (%2, %3) ===")
                 .arg(radius).arg(center.x()).arg(center.y());
     
     QVector<MatchDiagnostic> nearbyMatches;
@@ -339,7 +339,7 @@ void PixelMatchingDebugger::listAllMatchesInRadius(const QPoint& center, double 
     
     for (const auto& match : nearbyMatches) {
         QString status = match.passesOverallCheck ? "✅ PASS" : "❌ FAIL";
-        qDebug() << QString("  det[%1] -> cat[%2] %3: dist=%.2f px %4")
+        qDebug() << QString("  det[%1] -> cat[%2] %3: dist=%4 px %5")
                     .arg(match.detectedIndex).arg(match.catalogIndex)
                     .arg(match.catalogId).arg(match.pixelDistance).arg(status);
         
@@ -438,11 +438,11 @@ void PixelMatchingDebugger::diagnoseMatching(const QVector<QPoint>& detectedStar
             
             // Add failure reasons
             if (!diag.passesDistanceCheck) {
-                diag.failureReasons.append(QString("Distance %.2f > tolerance %.1f")
+                diag.failureReasons.append(QString("Distance %1 > tolerance %2")
                                          .arg(closestDistance).arg(m_currentPixelTolerance));
             }
             if (!diag.passesMagnitudeCheck) {
-                diag.failureReasons.append(QString("MagDiff %.2f > tolerance %.1f")
+                diag.failureReasons.append(QString("MagDiff %1 > tolerance %2")
                                          .arg(diag.magnitudeDiff).arg(m_currentMagnitudeTolerance));
             }
             
@@ -466,7 +466,7 @@ void PixelMatchingDebugger::analyzeDistanceCriteria(double pixelTolerance)
         return;
     }
     
-    qDebug() << QString("=== DISTANCE CRITERIA ANALYSIS (tolerance: %.1f px) ===").arg(pixelTolerance);
+    qDebug() << QString("=== DISTANCE CRITERIA ANALYSIS (tolerance: %1 px) ===").arg(pixelTolerance);
     
     QVector<double> distances;
     int withinTolerance = 0;
@@ -497,15 +497,15 @@ void PixelMatchingDebugger::analyzeDistanceCriteria(double pixelTolerance)
         double avgDistance = std::accumulate(distances.begin(), distances.end(), 0.0) / distances.size();
         
         qDebug() << QString("Distance statistics:");
-        qDebug() << QString("  Median: %.2f px, Average: %.2f px").arg(medianDistance).arg(avgDistance);
-        qDebug() << QString("  Q25: %.2f px, Q75: %.2f px").arg(q25).arg(q75);
-        qDebug() << QString("  Range: %.2f - %.2f px").arg(distances.first()).arg(distances.last());
+        qDebug() << QString("  Median: %1 px, Average: %2 px").arg(medianDistance).arg(avgDistance);
+        qDebug() << QString("  Q25: %1 px, Q75: %2 px").arg(q25).arg(q75);
+        qDebug() << QString("  Range: %1 - %2 px").arg(distances.first()).arg(distances.last());
         
         qDebug() << QString("Criteria efficiency:");
-        qDebug() << QString("  Within tolerance: %1/%2 (%.1f%%)")
+        qDebug() << QString("  Within tolerance: %1/%2 (%3%%)")
                     .arg(withinTolerance).arg(distances.size())
                     .arg(100.0 * withinTolerance / distances.size());
-        qDebug() << QString("  Passing validation: %1/%2 (%.1f%%)")
+        qDebug() << QString("  Passing validation: %1/%2 (%3%%)")
                     .arg(passingValidation).arg(distances.size())
                     .arg(100.0 * passingValidation / distances.size());
         qDebug() << QString("  Should match but don't: %1").arg(shouldMatchButDont);
@@ -518,10 +518,10 @@ void PixelMatchingDebugger::analyzeDistanceCriteria(double pixelTolerance)
         
         // Suggest optimal tolerance
         if (medianDistance * 2.0 < pixelTolerance) {
-            qDebug() << QString("💡 SUGGESTION: Current tolerance (%.1f) may be too loose. Try %.1f px")
+            qDebug() << QString("💡 SUGGESTION: Current tolerance (%1) may be too loose. Try %2 px")
                         .arg(pixelTolerance).arg(medianDistance * 1.5);
         } else if (medianDistance > pixelTolerance) {
-            qDebug() << QString("💡 SUGGESTION: Current tolerance (%.1f) may be too strict. Try %.1f px")
+            qDebug() << QString("💡 SUGGESTION: Current tolerance (%1) may be too strict. Try %2 px")
                         .arg(pixelTolerance).arg(medianDistance * 1.2);
         }
     }
@@ -529,7 +529,7 @@ void PixelMatchingDebugger::analyzeDistanceCriteria(double pixelTolerance)
 
 void PixelMatchingDebugger::findMissedMatches(double searchRadius)
 {
-    qDebug() << QString("=== FINDING MISSED MATCHES (search radius: %.1f px) ===").arg(searchRadius);
+    qDebug() << QString("=== FINDING MISSED MATCHES (search radius: %1 px) ===").arg(searchRadius);
     
     int missedCount = 0;
     int visualMisses = 0;
@@ -545,14 +545,14 @@ void PixelMatchingDebugger::findMissedMatches(double searchRadius)
                     qDebug() << QString("  Visual miss %1: det[%2] -> cat[%3] %4")
                                 .arg(visualMisses).arg(diag.detectedIndex)
                                 .arg(diag.catalogIndex).arg(diag.catalogId);
-                    qDebug() << QString("    Distance: %.2f px, Reasons: %5")
+                    qDebug() << QString("    Distance: %1 px, Reasons: %2")
                                 .arg(diag.pixelDistance).arg(diag.failureReasons.join("; "));
                 }
             }
         }
     }
     
-    qDebug() << QString("Found %1 missed matches within %.1f px radius")
+    qDebug() << QString("Found %1 missed matches within %2 px radius")
                 .arg(missedCount).arg(searchRadius);
     qDebug() << QString("Of these, %1 should match visually").arg(visualMisses);
     
@@ -563,7 +563,7 @@ void PixelMatchingDebugger::findMissedMatches(double searchRadius)
 
 void PixelMatchingDebugger::testToleranceRange(double minPixelTol, double maxPixelTol, double step)
 {
-    qDebug() << QString("\n=== TESTING TOLERANCE RANGE %.1f - %.1f px (step %.1f) ===")
+    qDebug() << QString("\n=== TESTING TOLERANCE RANGE %1 - %2 px (step %3) ===")
                 .arg(minPixelTol).arg(maxPixelTol).arg(step);
     
     if (m_diagnostics.isEmpty()) {
@@ -604,7 +604,7 @@ void PixelMatchingDebugger::testToleranceRange(double minPixelTol, double maxPix
         
         results.append(result);
         
-        qDebug() << QString("  Tolerance %.1f px: %1 matches/%2 potential (%.1f%% efficiency)")
+        qDebug() << QString("  Tolerance %1 px: %2 matches/%3 potential (%4%% efficiency)")
                     .arg(tol).arg(result.matchCount).arg(result.potentialMatches)
                     .arg(result.efficiency * 100.0);
     }
@@ -619,7 +619,7 @@ void PixelMatchingDebugger::testToleranceRange(double minPixelTol, double maxPix
                 return scoreA < scoreB;
             });
         
-        qDebug() << QString("💡 OPTIMAL TOLERANCE: %.1f px (%1 matches, %.1f%% efficiency)")
+        qDebug() << QString("💡 OPTIMAL TOLERANCE: %1 px (%2 matches, %3%% efficiency)")
                     .arg(optimalIt->tolerance).arg(optimalIt->matchCount)
                     .arg(optimalIt->efficiency * 100.0);
     }
@@ -646,18 +646,18 @@ void PixelMatchingDebugger::printSummaryReport()
     
     if (stats.potentialMatches > 0) {
         double efficiency = (double)stats.actualMatches / stats.potentialMatches * 100.0;
-        qDebug() << QString("  Overall efficiency: %.1f%%").arg(efficiency);
+        qDebug() << QString("  Overall efficiency: %1%%").arg(efficiency);
     }
     
     qDebug() << QString("Distance Analysis:");
-    qDebug() << QString("  Average distance: %.3f px").arg(stats.avgDistance);
-    qDebug() << QString("  Median distance: %.3f px").arg(stats.medianDistance);
-    qDebug() << QString("  Maximum distance: %.3f px").arg(stats.maxDistance);
+    qDebug() << QString("  Average distance: %1 px").arg(stats.avgDistance);
+    qDebug() << QString("  Median distance: %1 px").arg(stats.medianDistance);
+    qDebug() << QString("  Maximum distance: %1 px").arg(stats.maxDistance);
     
     qDebug() << QString("Systematic Offset:");
-    qDebug() << QString("  dx=%.3f px, dy=%.3f px").arg(stats.systematicOffset.x()).arg(stats.systematicOffset.y());
+    qDebug() << QString("  dx=%1 px, dy=%2 px").arg(stats.systematicOffset.x()).arg(stats.systematicOffset.y());
     double offsetMagnitude = sqrt(pow(stats.systematicOffset.x(), 2) + pow(stats.systematicOffset.y(), 2));
-    qDebug() << QString("  Offset magnitude: %.3f px").arg(offsetMagnitude);
+    qDebug() << QString("  Offset magnitude: %1 px").arg(offsetMagnitude);
     
     if (offsetMagnitude > 2.0) {
         qDebug() << "⚠️  LARGE SYSTEMATIC OFFSET - Check WCS calibration";
