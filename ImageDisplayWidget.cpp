@@ -54,23 +54,11 @@ void ImageDisplayWidget::setupUI()
     m_zoomLabel = new QLabel("100%");
     m_zoomLabel->setMinimumWidth(60);
     m_zoomLabel->setAlignment(Qt::AlignCenter);
-    
-    // Add magnitude legend toggle after the existing overlay controls
-    m_showMagnitudeLegendCheck = new QCheckBox("Show Legend");
-    m_showMagnitudeLegendCheck->setChecked(m_showMagnitudeLegend);
-    m_showMagnitudeLegendCheck->setToolTip("Toggle magnitude and spectral type legend");
 
     connect(m_zoomInButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomInClicked);
     connect(m_zoomOutButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomOutClicked);
     connect(m_zoomFitButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomFitClicked);
     connect(m_zoom100Button, &QPushButton::clicked, this, &ImageDisplayWidget::onZoom100Clicked);
-
-    connect(m_showMagnitudeLegendCheck, &QCheckBox::toggled, this, 
-            [this](bool show) {
-                m_showMagnitudeLegend = show;
-                updateDisplay();
-            });
-    m_controlLayout->addWidget(m_showMagnitudeLegendCheck);
     
     m_controlLayout->addWidget(m_zoomOutButton);
     m_controlLayout->addWidget(m_zoomInButton);
@@ -104,6 +92,13 @@ void ImageDisplayWidget::setupUI()
     m_showValidationCheck->setEnabled(false);
     connect(m_showValidationCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowValidationToggled);
     m_controlLayout->addWidget(m_showValidationCheck);
+
+    // FIXED: Add the legend checkbox with proper connection
+    m_showMagnitudeLegendCheck = new QCheckBox("Show Legend");
+    m_showMagnitudeLegendCheck->setChecked(m_showMagnitudeLegend);
+    m_showMagnitudeLegendCheck->setToolTip("Toggle magnitude and spectral type legend");
+    connect(m_showMagnitudeLegendCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowMagnitudeLegendToggled);
+    m_controlLayout->addWidget(m_showMagnitudeLegendCheck);
     
     // Add another separator
     auto* separator2 = new QFrame();
@@ -113,52 +108,6 @@ void ImageDisplayWidget::setupUI()
     
     m_controlLayout->addStretch();
         
-    // NEW: Star overlay toggle
-    m_showStarsCheck = new QCheckBox("Show Stars");
-    m_showStarsCheck->setChecked(m_showStars);  // Use current state
-    m_showStarsCheck->setToolTip("Toggle star detection overlay");
-    connect(m_showStarsCheck, &QCheckBox::toggled, this, &ImageDisplayWidget::onShowStarsToggled);
-    m_controlLayout->addWidget(m_showStarsCheck);
-    /*    
-    // Stretch controls
-    m_autoStretchButton = new QPushButton("Auto Stretch");
-    m_autoStretchButton->setCheckable(true);
-    m_autoStretchButton->setChecked(m_autoStretchEnabled);
-    connect(m_autoStretchButton, &QPushButton::toggled, this, &ImageDisplayWidget::onAutoStretchToggled);
-    
-    m_minLabel = new QLabel("Min:");
-    m_minSlider = new QSlider(Qt::Horizontal);
-    m_minSlider->setRange(0, 1000);
-    m_minSlider->setValue(0);
-    m_minSpinBox = new QSpinBox;
-    m_minSpinBox->setRange(0, 100);
-    m_minSpinBox->setValue(0);
-    m_minSpinBox->setSuffix("%");
-    
-    m_maxLabel = new QLabel("Max:");
-    m_maxSlider = new QSlider(Qt::Horizontal);
-    m_maxSlider->setRange(0, 1000);
-    m_maxSlider->setValue(1000);
-    m_maxSpinBox = new QSpinBox;
-    m_maxSpinBox->setRange(0, 100);
-    m_maxSpinBox->setValue(100);
-    m_maxSpinBox->setSuffix("%");
-    
-    connect(m_minSlider, &QSlider::valueChanged, this, &ImageDisplayWidget::onStretchChanged);
-    connect(m_maxSlider, &QSlider::valueChanged, this, &ImageDisplayWidget::onStretchChanged);
-    connect(m_minSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &ImageDisplayWidget::onStretchChanged);
-    connect(m_maxSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this, &ImageDisplayWidget::onStretchChanged);
-    
-    m_controlLayout->addWidget(m_autoStretchButton);
-    m_controlLayout->addWidget(m_minLabel);
-    m_controlLayout->addWidget(m_minSlider);
-    m_controlLayout->addWidget(m_minSpinBox);
-    m_controlLayout->addWidget(m_maxLabel);
-    m_controlLayout->addWidget(m_maxSlider);
-    m_controlLayout->addWidget(m_maxSpinBox);
-    
-    m_mainLayout->addWidget(controlGroup);
-    */
     // Image display area
     m_scrollArea = new QScrollArea;
     m_scrollArea->setBackgroundRole(QPalette::Dark);
@@ -809,9 +758,6 @@ void ImageDisplayWidget::addStarOverlay(const QPoint& center, float radius, floa
     m_starOverlays.append(overlay);
 }
 
-// Replace your existing drawCatalogOverlay method in ImageDisplayWidget.cpp
-// with this enhanced version that matches the chart dialog quality
-
 void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
 {
     if (!m_validationResults || m_validationResults->catalogStars.isEmpty()) {
@@ -840,11 +786,6 @@ void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, do
             maxMagnitude = qMax(maxMagnitude, star.magnitude);
         }
     }
-    
-    qDebug() << QString("Drawing %1 catalog stars, magnitude range: %2 to %3")
-                .arg(m_validationResults->catalogStars.size())
-                .arg(minMagnitude, 0, 'f', 2)
-                .arg(maxMagnitude, 0, 'f', 2);
     
     int starsDrawn = 0;
     
@@ -915,15 +856,34 @@ void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, do
         starsDrawn++;
     }
     
-    qDebug() << QString("Drew %1 catalog stars on image overlay").arg(starsDrawn);
-    
-    // Draw field center and scale reference
+    // Draw field center cross
     drawFieldReference(painter, xScale, yScale);
+    
+    // FIXED: Draw legend only if the checkbox is checked
+    if (m_showMagnitudeLegend) {
+        drawMagnitudeLegend(painter, xScale, yScale);
+    }
     
     painter.setRenderHint(QPainter::Antialiasing, false);
 }
 
-// Add this helper method to draw field reference markers
+void ImageDisplayWidget::onShowMagnitudeLegendToggled(bool show)
+{
+    m_showMagnitudeLegend = show;
+    qDebug() << "Magnitude legend toggled:" << (show ? "ON" : "OFF");
+    updateDisplay();
+    emit magnitudeLegendToggled(show);
+}
+
+void ImageDisplayWidget::setMagnitudeLegendVisible(bool visible)
+{
+    if (m_showMagnitudeLegend != visible) {
+        m_showMagnitudeLegend = visible;
+        m_showMagnitudeLegendCheck->setChecked(visible);
+        updateDisplay();
+    }
+}
+
 void ImageDisplayWidget::drawFieldReference(QPainter& painter, double xScale, double yScale)
 {
     if (!m_imageData) return;
@@ -937,24 +897,20 @@ void ImageDisplayWidget::drawFieldReference(QPainter& painter, double xScale, do
     painter.drawLine(centerX - crossSize, centerY, centerX + crossSize, centerY);
     painter.drawLine(centerX, centerY - crossSize, centerX, centerY + crossSize);
     
-    // Draw magnitude scale legend in corner
-    if (m_validationResults && !m_validationResults->catalogStars.isEmpty() && m_zoomFactor > 0.8) {
-        drawMagnitudeLegend(painter, xScale, yScale);
-    }
+    // Note: Legend drawing moved to drawCatalogOverlay to respect the checkbox
 }
 
-// Add this method to draw a magnitude legend
 void ImageDisplayWidget::drawMagnitudeLegend(QPainter& painter, double xScale, double yScale)
 {
     // Position legend in top-right corner
-    int legendX = painter.device()->width() - 150;
+    int legendX = painter.device()->width() - 160;
     int legendY = 10;
-    int legendWidth = 140;
-    int legendHeight = 100;
+    int legendWidth = 150;
+    int legendHeight = 180;
     
     // Semi-transparent background
     painter.setPen(QPen(Qt::white, 1));
-    painter.setBrush(QColor(0, 0, 0, 150));
+    painter.setBrush(QColor(0, 0, 0, 180));
     QRect legendRect(legendX, legendY, legendWidth, legendHeight);
     painter.drawRect(legendRect);
     
@@ -972,13 +928,16 @@ void ImageDisplayWidget::drawMagnitudeLegend(QPainter& painter, double xScale, d
     normalFont.setPointSize(9);
     painter.setFont(normalFont);
     
-    // Draw sample stars with sizes
-    static const QMap<QString, QColor> spectralColorMap = {
-        {"O", QColor(155, 176, 255)}, {"B", QColor(170, 191, 255)}, 
-        {"A", QColor(202, 215, 255)}, {"F", QColor(248, 247, 255)}, 
-        {"G", QColor(255, 244, 234)}, {"K", QColor(255, 210, 161)}, 
-        {"M", QColor(255, 204, 111)}
-    };
+    // Get magnitude range from current data
+    double minMag = 999.0, maxMag = -999.0;
+    if (m_validationResults && !m_validationResults->catalogStars.isEmpty()) {
+        for (const auto& star : m_validationResults->catalogStars) {
+            if (star.isValid) {
+                minMag = qMin(minMag, star.magnitude);
+                maxMag = qMax(maxMag, star.magnitude);
+            }
+        }
+    }
     
     int yOffset = 25;
     
@@ -987,24 +946,46 @@ void ImageDisplayWidget::drawMagnitudeLegend(QPainter& painter, double xScale, d
     painter.drawText(legendX + 5, legendY + yOffset, "Size = Brightness");
     yOffset += 15;
     
-    // Draw different sized circles
-    for (int i = 0; i < 3; ++i) {
-        double size = 4 + i * 4; // 4, 8, 12 pixel sizes
-        double magnitude = 12.0 - i * 3; // 12, 9, 6 magnitude
-        
-        painter.setPen(QPen(Qt::lightGray, 1));
-        painter.setBrush(Qt::lightGray);
-        painter.drawEllipse(QPointF(legendX + 15, legendY + yOffset), size/2, size/2);
-        
-        painter.setPen(Qt::white);
-        painter.drawText(legendX + 25, legendY + yOffset + 4, 
-                        QString("mag %1").arg(magnitude, 0, 'f', 0));
-        yOffset += 15;
+    // Draw different sized circles with actual magnitude values
+    if (minMag < 999.0) {
+        for (int i = 0; i < 3; ++i) {
+            double size = 4 + i * 4; // 4, 8, 12 pixel sizes
+            double magnitude = minMag + i * (maxMag - minMag) / 2.0;
+            
+            painter.setPen(QPen(Qt::lightGray, 1));
+            painter.setBrush(Qt::lightGray);
+            painter.drawEllipse(QPointF(legendX + 15, legendY + yOffset), size/2, size/2);
+            
+            painter.setPen(Qt::white);
+            painter.drawText(legendX + 25, legendY + yOffset + 4, 
+                            QString("mag %1").arg(magnitude, 0, 'f', 1));
+            yOffset += 18;
+        }
     }
     
-    // Show color coding for spectral types (if we have room)
-    if (legendHeight > 80) {
-        painter.setPen(Qt::lightGray);
-        painter.drawText(legendX + 5, legendY + yOffset + 5, "Colors = Spectral Type");
+    // Show color coding for spectral types
+    painter.setPen(Qt::lightGray);
+    painter.drawText(legendX + 5, legendY + yOffset + 5, "Color = Spectral Type");
+    yOffset += 18;
+    
+    // Draw spectral type samples
+    static const QList<QPair<QString, QColor>> spectralSamples = {
+        {"O/B", QColor(170, 191, 255)},
+        {"A/F", QColor(225, 231, 255)},
+        {"G", QColor(255, 244, 234)},
+        {"K/M", QColor(255, 207, 136)}
+    };
+    
+    for (const auto& sample : spectralSamples) {
+        painter.setPen(QPen(sample.second.darker(150), 1));
+        painter.setBrush(sample.second);
+        painter.drawEllipse(QPointF(legendX + 15, legendY + yOffset), 4, 4);
+        
+        painter.setPen(Qt::white);
+        QFont smallFont = normalFont;
+        smallFont.setPointSize(8);
+        painter.setFont(smallFont);
+        painter.drawText(legendX + 25, legendY + yOffset + 3, sample.first);
+        yOffset += 15;
     }
 }

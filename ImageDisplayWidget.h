@@ -76,6 +76,7 @@ signals:
     void starOverlayToggled(bool visible);
     void catalogOverlayToggled(bool visible);
     void validationOverlayToggled(bool visible);
+    void magnitudeLegendToggled(bool visible);  // ADD THIS NEW SIGNAL
 
 protected:
     void wheelEvent(QWheelEvent* event) override;
@@ -86,11 +87,10 @@ private slots:
     void onZoomOutClicked();
     void onZoomFitClicked();
     void onZoom100Clicked();
-  //    void onAutoStretchToggled(bool enabled);
-  //    void onStretchChanged();
     void onShowStarsToggled(bool show);
     void onShowCatalogToggled(bool show);
     void onShowValidationToggled(bool show);
+    void onShowMagnitudeLegendToggled(bool show);  // ADD THIS NEW SLOT
 
 private:
     void setupUI();
@@ -106,7 +106,7 @@ private:
     void drawMagnitudeLegend(QPainter& painter, double xScale, double yScale);
 
     QCheckBox* m_showMagnitudeLegendCheck;
-    bool m_showMagnitudeLegend = true;
+    bool m_showMagnitudeLegend = false;
     WCSData m_wcsData;
     bool m_wcsOverlayEnabled = false;
     QVector<StarOverlay> m_starOverlays;
@@ -128,16 +128,7 @@ private:
     QCheckBox* m_showStarsCheck;
     QCheckBox* m_showCatalogCheck;
     QCheckBox* m_showValidationCheck;
-  /*    
-    // Stretch controls
-    QPushButton* m_autoStretchButton;
-    QLabel* m_minLabel;
-    QSlider* m_minSlider;
-    QSpinBox* m_minSpinBox;
-    QLabel* m_maxLabel;
-    QSlider* m_maxSlider;
-    QSpinBox* m_maxSpinBox;
-  */    
+
     // Data
     std::unique_ptr<ImageData> m_ownedImageData;  // Own the data
     const ImageData* m_imageData;
