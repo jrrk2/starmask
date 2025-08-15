@@ -23,6 +23,7 @@
 
 #include "GaiaGDR3Catalog.h"
 #include "PlatesolverSettingsDialog.h"
+#include "StarStatisticsChartDialog.h"
 
 // Add these method implementations to your MainWindow.cpp to fix the compilation errors:
 
@@ -1558,6 +1559,30 @@ void MainWindow::setupGaiaDR3Catalog()
     }
 }
 
+void MainWindow::onShowCatalogStats()
+{
+    if (!m_catalogQueried) {
+        QMessageBox::information(this, "No Catalog Data", 
+            "Please query the catalog first using 'Plot Catalog' or validation.");
+        return;
+    }
+    
+    QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+    
+    if (catalogStars.isEmpty()) {
+        QMessageBox::information(this, "No Stars", "No catalog stars available to display.");
+        return;
+    }
+    
+    // Show the existing text statistics (keep your current logging)
+    m_catalogValidator->showCatalogStats();
+    
+    // Create and show the interactive chart dialog
+    StarStatisticsChartDialog* chartDialog = new StarStatisticsChartDialog(catalogStars, this);
+    chartDialog->setAttribute(Qt::WA_DeleteOnClose);
+    chartDialog->exec();
+}
+
 // Update the catalog menu setup for Gaia:
 void MainWindow::setupCatalogMenu()
 {
@@ -1572,7 +1597,7 @@ void MainWindow::setupCatalogMenu()
     
     QAction* showStatsAction = catalogMenu->addAction("Show catalog statistics");
     connect(showStatsAction, &QAction::triggered, [this]() {
-        m_catalogValidator->showCatalogStats();
+	onShowCatalogStats();
     });
     
     QAction* testQueryAction = catalogMenu->addAction("Test Gaia query");

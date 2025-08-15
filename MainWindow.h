@@ -40,6 +40,9 @@ public:
     ~MainWindow();
 
 private slots:
+    void onShowCatalogStats();     // Update existing or add new
+  //    void onShowCatalogChart();     // Optional: separate chart action
+
     void onTestPlatesolveWithStarExtraction();
   //    void onTestPlatesolveComplete(const pcl::AstrometricMetadata& result, const WCSData& wcs);
     void onTestPlateSolveFailed(const QString& error);  

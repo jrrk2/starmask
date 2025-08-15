@@ -214,6 +214,7 @@ set(SOURCES
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
     StarMaskGenerator.cpp
+    StarStatisticsChartDialog.cpp
     IntegratedPlateSolver.cpp
     PlatesolverSettingsDialog.cpp
     AstrometryDirectSolver.cpp
@@ -240,6 +241,7 @@ set(HEADERS
     StarCatalogValidator.h
     StarCorrelator.h
     StarMaskGenerator.h
+    StarStatisticsChartDialog.h
     structuredefinitions.h
     PCLMockAPI.h
     PCLThreadMock.h
