@@ -22,6 +22,7 @@ set(PCL_INCLUDE_DIRS
     "${PCL_ROOT}/include" 
     "${PCL_ROOT}/src/3rdparty"
     "${PCL_ROOT}/src/modules/file-formats"
+    "${PCL_ROOT}/src/modules/file-formats/FITS"
     "${PCL_ROOT}/src"
 )
 set(PCL_LIBRARY_DIR "${PCL_ROOT}/src/pcl/macosx/g++/arm64/Release")
@@ -217,7 +218,7 @@ set(SOURCES
     PlatesolverSettingsDialog.cpp
     AstrometryDirectSolver.cpp
     SimplePlatesolver.cpp
-    ${PCL_ROOT}/src/modules/file-formats/FITS/FITS.cpp
+    FITS.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFInstance.cpp

@@ -323,6 +323,7 @@ public:
     // Coordinate transformations
     bool setWCSFromPCLKeywords(const pcl::FITSKeywordArray& keywords);
     bool setWCSFromImageMetadata(const ImageData& imageData);  // NEW: Direct from ImageData
+    bool setWCSFromSolver(pcl::FITSKeywordArray keywords, int width, int height);
     
     // PCL-based coordinate transformations
     QPointF skyToPixel(double ra, double dec) const;

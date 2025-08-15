@@ -9,6 +9,7 @@
 #include <QTemporaryDir>
 #include <QVector>
 #include <QPoint>
+#include <FITS/FITS.h>
 #include "structuredefinitions.h"
 
 // Simple wrapper that matches your existing interface
@@ -41,7 +42,7 @@ public:
 signals:
     void platesolveStarted();
     void platesolveProgress(const QString& status);
-    void platesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    void platesolveComplete(pcl::AstrometricMetadata & result, const WCSData& wcs);
     void platesolveFailed(const QString& error);
     void wcsDataAvailable(const WCSData& wcs);
 
@@ -53,7 +54,7 @@ private slots:
 private:
     QString createTempXYFile(const QVector<QPoint>& starCenters, const QVector<float>& starFluxes);
     QStringList buildArguments(const QString& xyFilePath, int imageWidth, int imageHeight);
-    PlatesolveResult parseWCSOutput(const QString& outputPath);
+    pcl::AstrometricMetadata parseWCSOutput(const QString& outputPath);
     void cleanup();
     
     // Configuration

@@ -41,14 +41,14 @@ public:
 
 private slots:
     void onTestPlatesolveWithStarExtraction();
-    void onTestPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+  //    void onTestPlatesolveComplete(const pcl::AstrometricMetadata& result, const WCSData& wcs);
     void onTestPlateSolveFailed(const QString& error);  
     void onDetectStarsIntegratedVersion();
   
     void onExtractStarsWithPlatesolve();
     void onPlatesolveStarted();
     void onPlatesolveProgress(const QString& status);
-    void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    void onPlatesolveComplete(const pcl::AstrometricMetadata& result, const WCSData& wcs);
     void onPlatesolveFailed(const QString& error);
     void configurePlatesolverSettings();
     void onWCSDataReceived(const WCSData& wcs);
@@ -60,7 +60,7 @@ private slots:
     //    void onExtractStarsWithPlatesolve();
     //    void onPlatesolveStarted();
     //    void onPlatesolveProgress(const QString& status);
-    //    void onPlatesolveComplete(const PlatesolveResult& result, const WCSData& wcs);
+    //    void onPlatesolveComplete(const pcl::AstrometricMetadata& result, const WCSData& wcs);
     //    void onPlatesolveFailed(const QString& error);
     //    void configurePlatesolverSettings();
     void onLoadImage();
@@ -145,10 +145,10 @@ private:
     void addTestButton();
     void quickDiagnoseCurrentMatches();
     void debugCurrentValidationResults();
-    void showPlatesolveResults(const PlatesolveResult& result);
+    void showPlatesolveResults(const pcl::AstrometricMetadata& result);
     void updateImageDisplayWithWCS(const WCSData& wcs);
-    void triggerCatalogValidation(const PlatesolveResult& result);
-    double calculateFieldRadius(const PlatesolveResult& result);
+    void triggerCatalogValidation(const pcl::AstrometricMetadata& result);
+    double calculateFieldRadius(const pcl::AstrometricMetadata& result);
     QString formatRACoordinates(double ra);
     QString formatDecCoordinates(double dec);
     

@@ -1988,6 +1988,58 @@ bool StarCatalogValidator::setWCSFromImageMetadata(const ImageData& imageData)
     }
 }
 
+bool StarCatalogValidator::setWCSFromSolver(pcl::FITSKeywordArray keywords, int width, int height)
+{
+    try {
+        // Use PCL's AstrometricMetadata.Build() method
+        // This is the high-level interface that handles everything!
+        pcl::PropertyArray emptyProperties; // We're using FITS keywords only
+        
+        try {
+            m_astrometricMetadata.Build(emptyProperties, keywords, 
+                                       width, height);
+            
+            // Check if the astrometric solution is valid
+            m_hasAstrometricData = m_astrometricMetadata.IsValid();
+            
+            if (m_hasAstrometricData) {
+                    qDebug() << "✅ PCL AstrometricMetadata setup successful!";
+                    qDebug() << "  Resolution:" << getPixScale() << "arcsec/pixel";
+                    qDebug() << "  Image size:"
+			     << m_astrometricMetadata.Width() << "x"
+			     << m_astrometricMetadata.Height();
+                    
+                    // Test the coordinate transformations
+                    testAstrometricMetadata();
+                    
+                    return true;
+            } else {
+                qDebug() << "❌ PCL AstrometricMetadata.IsValid() returned false";
+                
+                // Try to get more information about why it failed
+                try {
+                    m_astrometricMetadata.Validate(0.1); // Test with 0.1 pixel tolerance
+                } catch (const pcl::Error& e) {
+                    qDebug() << "  Validation error:" << e.Message().c_str();
+                }
+            }
+            
+        } catch (const pcl::Error& e) {
+            qDebug() << "❌ PCL AstrometricMetadata.Build() failed:" << e.Message().c_str();
+            m_hasAstrometricData = false;
+        }
+        
+        return false;
+        
+    } catch (const std::exception& e) {
+        qDebug() << "❌ Standard exception in PCL AstrometricMetadata setup:" << e.what();
+        return false;
+    } catch (...) {
+        qDebug() << "❌ Unknown exception in PCL AstrometricMetadata setup";
+        return false;
+    }
+}
+
 void StarCatalogValidator::testAstrometricMetadata() const
 {
     if (!m_hasAstrometricData) return;

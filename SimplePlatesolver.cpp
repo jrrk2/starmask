@@ -316,24 +316,44 @@ void SimplePlatesolver::onProcessFinished(int exitCode, QProcess::ExitStatus exi
     }
     
     // Parse the WCS solution
-    PlatesolveResult result = parseWCSOutput(wcsPath);
+    pcl::AstrometricMetadata result = parseWCSOutput(wcsPath);
     
-    if (result.solved) {
+    if (result.IsValid()) {
         // Convert to WCS data for compatibility
         WCSData wcs;
-        wcs.crval1 = result.ra_center;
-        wcs.crval2 = result.dec_center;
-        wcs.crpix1 = result.crpix1;
-        wcs.crpix2 = result.crpix2;
-        wcs.cd11 = result.cd11;
-        wcs.cd12 = result.cd12;
-        wcs.cd21 = result.cd21;
-        wcs.cd22 = result.cd22;
-        wcs.pixscale = result.pixscale;
+	pcl::DPoint centerCoords;
+	pcl::DPoint center, right, up;
+	double centerX = result.Width() * 0.5;
+	double centerY = result.Height() * 0.5;
+	double delta = 1.0; // 1 pixel offset
+	result.ImageCenterToCelestial(centerCoords);
+        wcs.crval1 = centerCoords.x;
+        wcs.crval2 = centerCoords.y;
+        wcs.crpix1 = centerX;
+        wcs.crpix2 = centerY;
+	result.ImageToCelestial(center, pcl::DPoint(centerX, centerY));
+	result.ImageToCelestial(right,  pcl::DPoint(centerX + delta, centerY));
+        result.ImageToCelestial(up,     pcl::DPoint(centerX, centerY + delta));
+        
+        // Calculate CD matrix elements
+        double cd1_1 = (right.x - center.x) / delta;  // dRA/dX
+        double cd1_2 = (up.x - center.x) / delta;     // dRA/dY  
+        double cd2_1 = (right.y - center.y) / delta;  // dDec/dX
+        double cd2_2 = (up.y - center.y) / delta;     // dDec/dY
+        
+        // Handle RA wraparound near 0/360 boundary
+        if (abs(cd1_1) > 180) cd1_1 = cd1_1 > 0 ? cd1_1 - 360 : cd1_1 + 360;
+        if (abs(cd1_2) > 180) cd1_2 = cd1_2 > 0 ? cd1_2 - 360 : cd1_2 + 360;
+
+        wcs.cd11 = cd1_1;
+        wcs.cd12 = cd1_2;
+        wcs.cd21 = cd2_1;
+        wcs.cd22 = cd2_2;
 	/*
-	  wcs.rotation = result.orientation;
-	  wcs.imageWidth = m_currentImageWidth;
-	  wcs.imageHeight = m_currentImageHeight;
+        wcs.pixscale = result.pixscale;
+	wcs.rotation = result.orientation;
+	wcs.imageWidth = m_currentImageWidth;
+	wcs.imageHeight = m_currentImageHeight;
 	*/
         wcs.isValid = true;
         
@@ -384,100 +404,53 @@ void SimplePlatesolver::onTimeout()
     }
 }
 
-PlatesolveResult SimplePlatesolver::parseWCSOutput(const QString& outputPath)
+pcl::AstrometricMetadata SimplePlatesolver::parseWCSOutput(const QString& outputPath)
 {
-    PlatesolveResult result;
-    result.solved = false;
+  pcl::AstrometricMetadata astro;
     
-    // Simple FITS header parsing - you can enhance this with CFITSIO if needed
-    QFile file(outputPath);
-    if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "Cannot open WCS file:" << outputPath;
-        return result;
-    }
-    
-    QTextStream in(&file);
-    QString content = in.readAll();
-    file.close();
-    
-    QRegularExpression crval1Regex(R"(CRVAL1\s*=\s*([\d\.-]+))");
-    QRegularExpression crval2Regex(R"(CRVAL2\s*=\s*([\d\.-]+))");
-    QRegularExpression crpix1Regex(R"(CRPIX1\s*=\s*([\d\.-]+))");
-    QRegularExpression crpix2Regex(R"(CRPIX2\s*=\s*([\d\.-]+))");
-    QRegularExpression cd11Regex(R"(CD1_1\s*=\s*([\d\.-]+[eE]?[\+\-]?\d*))");
-    QRegularExpression cd12Regex(R"(CD1_2\s*=\s*([\d\.-]+[eE]?[\+\-]?\d*))");
-    QRegularExpression cd21Regex(R"(CD2_1\s*=\s*([\d\.-]+[eE]?[\+\-]?\d*))");
-    QRegularExpression cd22Regex(R"(CD2_2\s*=\s*([\d\.-]+[eE]?[\+\-]?\d*))");
-    
-    QRegularExpressionMatch match;
-    
-    match = crval1Regex.match(content);
-    if (match.hasMatch()) {
-        result.ra_center = match.captured(1).toDouble();
-    }
-    
-    match = crval2Regex.match(content);
-    if (match.hasMatch()) {
-        result.dec_center = match.captured(1).toDouble();
-    }
-    
-    match = crpix1Regex.match(content);
-    if (match.hasMatch()) {
-        result.crpix1 = match.captured(1).toDouble();
-    }
-    
-    match = crpix2Regex.match(content);
-    if (match.hasMatch()) {
-        result.crpix2 = match.captured(1).toDouble();
-    }
-    
-    match = cd11Regex.match(content);
-    if (match.hasMatch()) {
-        result.cd11 = match.captured(1).toDouble();
-    }
-    
-    match = cd12Regex.match(content);
-    if (match.hasMatch()) {
-        result.cd12 = match.captured(1).toDouble();
-    }
-    
-    match = cd21Regex.match(content);
-    if (match.hasMatch()) {
-        result.cd21 = match.captured(1).toDouble();
-    }
-    
-    match = cd22Regex.match(content);
-    if (match.hasMatch()) {
-        result.cd22 = match.captured(1).toDouble();
-    }
-    
-    // Calculate derived values
-    if (result.cd11 != 0.0 || result.cd12 != 0.0) {
-        // Pixel scale from CD matrix (convert to arcsec/pixel)
-        result.pixscale = sqrt(result.cd11 * result.cd11 + result.cd12 * result.cd12) * 3600.0;
-        
-        // Orientation from CD matrix
-        result.orientation = atan2(result.cd12, result.cd11) * 180.0 / M_PI;
-        if (result.orientation < 0) result.orientation += 360.0;
-        
-        // Field size estimates (approximate)
-        result.fieldWidth = m_currentImageWidth * result.pixscale / 60.0;   // arcmin
-        result.fieldHeight = m_currentImageHeight * result.pixscale / 60.0; // arcmin
-        
-        result.solved = true;
-        result.errorMessage = "";
-        
-        qDebug() << "Parsed WCS solution:";
-        qDebug() << "  RA:" << result.ra_center << "degrees";
-        qDebug() << "  Dec:" << result.dec_center << "degrees";
-        qDebug() << "  Pixel scale:" << result.pixscale << "arcsec/px";
-        qDebug() << "  Orientation:" << result.orientation << "degrees";
-    } else {
-        result.errorMessage = "Invalid or missing CD matrix in WCS file";
-        qDebug() << "Failed to parse WCS: no valid CD matrix found";
-    }
-    
-    return result;
+  try {
+      qDebug() << "Attempting to read FITS file:" << outputPath;
+
+      pcl::FITSReader reader;
+      ((pcl::FITSReader &)reader).SetIndex(0);
+      pcl::String pclPath(outputPath.toUtf8().constData());
+
+      qDebug() << "Opening FITS file...";
+      reader.Open(pclPath);
+      // Read FITS keywords with better error handling
+      try {
+	  qDebug() << "Reading FITS keywords...";
+	  pcl::FITSKeywordArray keywords = reader.ReadFITSKeywords();
+	  qDebug() << "Found" << keywords.Length() << "FITS keywords";
+	  pcl::PropertyArray emptyProperties; // We're using FITS keywords only
+	  int width, height;
+	  for (const auto& kw : keywords) {
+	    bool isNumber;
+	    if (kw.name == "IMAGEW") width = kw.value.ToDouble();
+	    if (kw.name == "IMAGEH") height = kw.value.ToDouble();
+	  }
+	  try {
+	  astro.Build(emptyProperties, keywords, width, height);
+	  } catch(const pcl::Error& e) {
+	    qDebug() << "WCS build error"  << e.Message().c_str();
+	  }
+	  // Check if the astrometric solution is valid
+	 bool hasAstro = astro.IsValid();
+	  qDebug() << "WCS solution: " << hasAstro;
+
+      } catch (const pcl::Error& e) {
+	  qDebug() << "Error reading FITS keywords:" << e.Message().c_str();
+      } catch (...) {
+	  qDebug() << "Unknown error reading FITS keywords";
+      }
+
+      reader.Close();
+      qDebug() << "Successfully read FITS file:" << outputPath;
+  } catch (const pcl::Error& e) {
+      qDebug() << "PCL FITS Error:" << e.Message().c_str();
+      qDebug() << "File path:" << outputPath;
+  }	
+  return astro;
 }
 
 void SimplePlatesolver::cleanup()
