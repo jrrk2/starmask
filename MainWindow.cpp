@@ -3085,3 +3085,179 @@ void MainWindow::addPlatesolvingTestButton()
         m_buttonLayout->addWidget(testPlatesolveBtn);
     }
 }
+
+// Add this method to your MainWindow class to ensure you're getting all catalog data
+
+void MainWindow::enhanceCatalogDisplay()
+{
+    if (!m_catalogQueried || !m_catalogValidator) {
+        qDebug() << "No catalog data available for enhanced display";
+        return;
+    }
+    
+    // Get ALL catalog stars (not just those in validation results)
+    QVector<CatalogStar> allCatalogStars = m_catalogValidator->getCatalogStars();
+    
+    qDebug() << "\n=== ENHANCING CATALOG DISPLAY ===";
+    qDebug() << "Total catalog stars from validator:" << allCatalogStars.size();
+    
+    if (allCatalogStars.isEmpty()) {
+        qDebug() << "No catalog stars available from validator";
+        return;
+    }
+    
+    // Create a comprehensive validation result that includes ALL catalog stars
+    ValidationResult enhancedResults;
+    enhancedResults.catalogStars = allCatalogStars;
+    enhancedResults.totalCatalog = allCatalogStars.size();
+    enhancedResults.isValid = true;
+    
+    // Calculate pixel positions for all stars (if not already done)
+    int starsWithValidPixelPos = 0;
+    for (auto& star : enhancedResults.catalogStars) {
+        // Ensure pixel position is calculated
+        if (star.pixelPos.x() == 0 && star.pixelPos.y() == 0) {
+            // Calculate pixel position from RA/Dec using WCS if available
+            // You may need to implement this based on your WCS system
+            star.pixelPos = calculatePixelPosition(star.ra, star.dec);
+        }
+        
+        if (star.pixelPos.x() > 0 && star.pixelPos.y() > 0) {
+            starsWithValidPixelPos++;
+            star.isValid = true;
+        }
+    }
+    
+    qDebug() << "Stars with valid pixel positions:" << starsWithValidPixelPos;
+    
+    // Set the enhanced results to the image display widget
+    if (m_imageDisplayWidget) {
+        m_imageDisplayWidget->setValidationResults(enhancedResults);
+        
+        // Make sure catalog overlay is visible
+        m_imageDisplayWidget->setCatalogOverlayVisible(true);
+        
+        qDebug() << "Enhanced catalog overlay applied to image display";
+    }
+}
+
+// Helper method to calculate pixel positions (you'll need to adapt this to your WCS system)
+QPointF MainWindow::calculatePixelPosition(double ra, double dec)
+{
+    // This is a placeholder - you'll need to implement this based on your WCS/astrometry system
+    // If you have WCS data available:
+    
+    if (m_catalogValidator) {
+        // Try to use the catalog validator's coordinate transformation
+        // You may have methods like raDecToPixel() or similar
+        return m_catalogValidator->skyToPixel(ra, dec);
+    }
+    
+    // Fallback: return invalid position
+    return QPointF(-1, -1);
+}
+
+// Enhanced method to ensure catalog overlay shows all stars
+void MainWindow::onPlotCatalogStarsEnhanced()
+{
+    if (!m_catalogQueried) {
+        // Force a catalog query first
+        double crval1, crval2;
+        if (m_catalogValidator) {
+            m_catalogValidator->getCenter(crval1, crval2);
+            
+            int width = m_catalogValidator->getWidth();
+            int height = m_catalogValidator->getHeight();
+            double pixscale = m_catalogValidator->getPixScale();
+            double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
+            fieldRadius = std::max(fieldRadius, 1.0); // Ensure at least 1 degree radius
+            
+            // Set a higher magnitude limit to get more stars
+            // m_catalogValidator->setMagnitudeLimit(18.0); // Uncomment if method exists
+            
+            qDebug() << QString("Querying catalog: RA=%1, Dec=%2, radius=%3°, center=(%4,%5)")
+                        .arg(crval1).arg(crval2).arg(fieldRadius).arg(width/2).arg(height/2);
+            
+            m_catalogValidator->queryCatalog(crval1, crval2, fieldRadius);
+            m_catalogQueried = true;
+        }
+    }
+    
+    // Apply enhanced display
+    enhanceCatalogDisplay();
+}
+
+// Method to debug and compare what's shown in main window vs chart dialog
+void MainWindow::debugCatalogDisplayComparison()
+{
+    qDebug() << "\n=== CATALOG DISPLAY COMPARISON DEBUG ===";
+    
+    // Get data that goes to chart dialog
+    QVector<CatalogStar> chartDialogStars = m_catalogValidator->getCatalogStars();
+    qDebug() << "Chart dialog will show:" << chartDialogStars.size() << "stars";
+    
+    // Get data that goes to image overlay
+    ValidationResult* imageOverlayResults = nullptr;
+    if (m_imageDisplayWidget) {
+        // You might need to add a getter method to ImageDisplayWidget
+        // imageOverlayResults = m_imageDisplayWidget->getValidationResults();
+    }
+    
+    if (imageOverlayResults) {
+        qDebug() << "Image overlay shows:" << imageOverlayResults->catalogStars.size() << "stars";
+        
+        // Compare the data
+        if (chartDialogStars.size() != imageOverlayResults->catalogStars.size()) {
+            qDebug() << "MISMATCH: Different number of stars between chart and overlay!";
+            qDebug() << "Chart:" << chartDialogStars.size() << "vs Overlay:" << imageOverlayResults->catalogStars.size();
+        }
+    } else {
+        qDebug() << "Image overlay has no validation results set";
+    }
+    
+    // Check first few stars from each source
+    qDebug() << "\nFirst 3 stars from chart dialog source:";
+    for (int i = 0; i < qMin(3, chartDialogStars.size()); ++i) {
+        const auto& star = chartDialogStars[i];
+        qDebug() << QString("  %1: RA=%2, Dec=%3, Mag=%4, Pixel=(%5,%6)")
+                    .arg(star.id).arg(star.ra).arg(star.dec).arg(star.magnitude)
+                    .arg(star.pixelPos.x()).arg(star.pixelPos.y());
+    }
+    
+    if (imageOverlayResults && !imageOverlayResults->catalogStars.isEmpty()) {
+        qDebug() << "\nFirst 3 stars from image overlay source:";
+        for (int i = 0; i < qMin(3, imageOverlayResults->catalogStars.size()); ++i) {
+            const auto& star = imageOverlayResults->catalogStars[i];
+            qDebug() << QString("  %1: RA=%2, Dec=%3, Mag=%4, Pixel=(%5,%6)")
+                        .arg(star.id).arg(star.ra).arg(star.dec).arg(star.magnitude)
+                        .arg(star.pixelPos.x()).arg(star.pixelPos.y());
+        }
+    }
+}
+
+// Add this to your menu or call it after catalog plotting
+void MainWindow::syncCatalogDisplays()
+{
+    // Ensure both the chart dialog and image overlay show the same data
+    QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+    
+    if (catalogStars.isEmpty()) {
+        qDebug() << "No catalog stars to sync";
+        return;
+    }
+    
+    // Create validation results for image overlay
+    ValidationResult syncedResults;
+    syncedResults.catalogStars = catalogStars;
+    syncedResults.totalCatalog = catalogStars.size();
+    syncedResults.isValid = true;
+    syncedResults.summary = QString("Synced catalog display: %1 stars").arg(catalogStars.size());
+    
+    // Apply to image display
+    if (m_imageDisplayWidget) {
+        m_imageDisplayWidget->setValidationResults(syncedResults);
+        m_imageDisplayWidget->setCatalogOverlayVisible(true);
+    }
+    
+    qDebug() << QString("Synced %1 catalog stars to image overlay").arg(catalogStars.size());
+}

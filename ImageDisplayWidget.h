@@ -66,6 +66,9 @@ public:
     void setWCSOverlayEnabled(bool enabled);
     void clearStarOverlays();
     void addStarOverlay(const QPoint& center, float radius, float flux);
+    const ValidationResult* getValidationResults() const { return m_validationResults; }
+    void setMagnitudeLegendVisible(bool visible);
+    bool isMagnitudeLegendVisible() const { return m_showMagnitudeLegend; }
 
 signals:
     void imageClicked(int x, int y, float value);
@@ -99,7 +102,11 @@ private:
     void drawStarOverlay(QPainter& painter, double xScale, double yScale);
     void drawCatalogOverlay(QPainter& painter, double xScale, double yScale);
     void drawValidationOverlay(QPainter& painter, double xScale, double yScale);
+    void drawFieldReference(QPainter& painter, double xScale, double yScale);
+    void drawMagnitudeLegend(QPainter& painter, double xScale, double yScale);
 
+    QCheckBox* m_showMagnitudeLegendCheck;
+    bool m_showMagnitudeLegend = true;
     WCSData m_wcsData;
     bool m_wcsOverlayEnabled = false;
     QVector<StarOverlay> m_starOverlays;

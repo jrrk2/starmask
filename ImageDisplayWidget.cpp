@@ -55,10 +55,22 @@ void ImageDisplayWidget::setupUI()
     m_zoomLabel->setMinimumWidth(60);
     m_zoomLabel->setAlignment(Qt::AlignCenter);
     
+    // Add magnitude legend toggle after the existing overlay controls
+    m_showMagnitudeLegendCheck = new QCheckBox("Show Legend");
+    m_showMagnitudeLegendCheck->setChecked(m_showMagnitudeLegend);
+    m_showMagnitudeLegendCheck->setToolTip("Toggle magnitude and spectral type legend");
+
     connect(m_zoomInButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomInClicked);
     connect(m_zoomOutButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomOutClicked);
     connect(m_zoomFitButton, &QPushButton::clicked, this, &ImageDisplayWidget::onZoomFitClicked);
     connect(m_zoom100Button, &QPushButton::clicked, this, &ImageDisplayWidget::onZoom100Clicked);
+
+    connect(m_showMagnitudeLegendCheck, &QCheckBox::toggled, this, 
+            [this](bool show) {
+                m_showMagnitudeLegend = show;
+                updateDisplay();
+            });
+    m_controlLayout->addWidget(m_showMagnitudeLegendCheck);
     
     m_controlLayout->addWidget(m_zoomOutButton);
     m_controlLayout->addWidget(m_zoomInButton);
@@ -716,75 +728,6 @@ void ImageDisplayWidget::stretchImageData(const float* input, float* output, siz
     }
 }
 
-// Add these methods to ImageDisplayWidget.cpp to help visualize alignment issues
-
-void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
-{
-    painter.setPen(QPen(Qt::blue, 2));
-    painter.setBrush(Qt::NoBrush);
-    
-    // Draw different markers for different brightness ranges
-    for (const auto& star : m_validationResults->catalogStars) {
-        if (!star.isValid) continue;
-        
-        QPointF scaledPos(star.pixelPos.x() * xScale, star.pixelPos.y() * yScale);
-        
-        // Use different colors/sizes based on magnitude
-        if (star.magnitude < 8.0) {
-            // Very bright stars - larger red squares
-            painter.setPen(QPen(Qt::red, 3));
-            double size = 10.0;
-            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
-            painter.drawRect(rect);
-            
-            // Draw magnitude label for bright stars
-            painter.setPen(QPen(Qt::red, 1));
-            painter.drawText(scaledPos + QPointF(12, -8), 
-                           QString("mag %1").arg(star.magnitude, 0, 'f', 1));
-            
-        } else if (star.magnitude < 10.0) {
-            // Bright stars - medium blue squares
-            painter.setPen(QPen(Qt::cyan, 2));
-            double size = 8.0;
-            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
-            painter.drawRect(rect);
-            
-        } else {
-            // Faint stars - small blue squares
-            painter.setPen(QPen(Qt::blue, 1));
-            double size = 6.0;
-            QRectF rect(scaledPos.x() - size/2, scaledPos.y() - size/2, size, size);
-            painter.drawRect(rect);
-        }
-        
-        // Always draw center point
-        painter.setPen(QPen(Qt::white, 1));
-        painter.drawPoint(scaledPos);
-    }
-    
-    // Draw image center cross for reference
-    painter.setPen(QPen(Qt::yellow, 2));
-    double centerX = m_imageData->width * 0.5 * xScale;
-    double centerY = m_imageData->height * 0.5 * yScale;
-    double crossSize = 20;
-    
-    painter.drawLine(centerX - crossSize, centerY, centerX + crossSize, centerY);
-    painter.drawLine(centerX, centerY - crossSize, centerX, centerY + crossSize);
-    
-    // Draw coordinate grid for reference
-    painter.setPen(QPen(Qt::darkGray, 1, Qt::DashLine));
-    
-    // Vertical lines every 200 pixels
-    for (int x = 200; x < m_imageData->width; x += 200) {
-        painter.drawLine(x * xScale, 0, x * xScale, m_imageData->height * yScale);
-    }
-    
-    // Horizontal lines every 200 pixels  
-    for (int y = 200; y < m_imageData->height; y += 200) {
-        painter.drawLine(0, y * yScale, m_imageData->width * xScale, y * yScale);
-    }
-}
-
 // Add this method to help measure alignment manually
 void ImageDisplayWidget::mousePressEvent(QMouseEvent* event)
 {
@@ -864,4 +807,204 @@ void ImageDisplayWidget::addStarOverlay(const QPoint& center, float radius, floa
     overlay.radius = radius;
     overlay.flux = flux;
     m_starOverlays.append(overlay);
+}
+
+// Replace your existing drawCatalogOverlay method in ImageDisplayWidget.cpp
+// with this enhanced version that matches the chart dialog quality
+
+void ImageDisplayWidget::drawCatalogOverlay(QPainter& painter, double xScale, double yScale)
+{
+    if (!m_validationResults || m_validationResults->catalogStars.isEmpty()) {
+        return;
+    }
+    
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    
+    // Spectral type color map (same as chart dialog)
+    static const QMap<QString, QColor> spectralColorMap = {
+        {"O", QColor(155, 176, 255)}, // Blue
+        {"B", QColor(170, 191, 255)}, // Blue-white  
+        {"A", QColor(202, 215, 255)}, // White
+        {"F", QColor(248, 247, 255)}, // Yellow-white
+        {"G", QColor(255, 244, 234)}, // Yellow (like our Sun)
+        {"K", QColor(255, 210, 161)}, // Orange
+        {"M", QColor(255, 204, 111)}, // Red
+        {"U", QColor(128, 128, 128)}  // Unknown - gray
+    };
+    
+    // Calculate magnitude range for sizing
+    double minMagnitude = 999.0, maxMagnitude = -999.0;
+    for (const auto& star : m_validationResults->catalogStars) {
+        if (star.isValid) {
+            minMagnitude = qMin(minMagnitude, star.magnitude);
+            maxMagnitude = qMax(maxMagnitude, star.magnitude);
+        }
+    }
+    
+    qDebug() << QString("Drawing %1 catalog stars, magnitude range: %2 to %3")
+                .arg(m_validationResults->catalogStars.size())
+                .arg(minMagnitude, 0, 'f', 2)
+                .arg(maxMagnitude, 0, 'f', 2);
+    
+    int starsDrawn = 0;
+    
+    // Draw each catalog star with proper astronomical styling
+    for (const auto& star : m_validationResults->catalogStars) {
+        if (!star.isValid) continue;
+        
+        QPointF scaledPos(star.pixelPos.x() * xScale, star.pixelPos.y() * yScale);
+        
+        // Skip stars outside the visible area (with some margin)
+        if (scaledPos.x() < -50 || scaledPos.x() > painter.device()->width() + 50 ||
+            scaledPos.y() < -50 || scaledPos.y() > painter.device()->height() + 50) {
+            continue;
+        }
+        
+        // Get spectral type color
+        QString spectralType = star.spectralType.left(1).toUpper();
+        QColor starColor = spectralColorMap.value(spectralType, QColor(200, 200, 200));
+        
+        // Calculate star size based on magnitude (brighter = larger)
+        double magnitudeRange = maxMagnitude - minMagnitude;
+        double normalizedMag = magnitudeRange > 0.1 ? 
+                              (1.0 - (star.magnitude - minMagnitude) / magnitudeRange) : 0.5;
+        normalizedMag = qBound(0.0, normalizedMag, 1.0);
+        
+        // Size range: 3-15 pixels (same as chart dialog)
+        double starSize = 3.0 + normalizedMag * 12.0;
+        
+        // Adjust size based on zoom level
+        double adjustedSize = starSize * qMin(2.0, qMax(0.5, m_zoomFactor));
+        
+        // Draw star as filled circle with border
+        painter.setPen(QPen(starColor.darker(150), 1));
+        painter.setBrush(QBrush(starColor));
+        painter.drawEllipse(scaledPos, adjustedSize/2, adjustedSize/2);
+        
+        // Add brightness center point for bright stars
+        if (star.magnitude < minMagnitude + magnitudeRange * 0.3) {
+            painter.setPen(QPen(Qt::white, 1));
+            painter.setBrush(Qt::white);
+            painter.drawEllipse(scaledPos, 1, 1);
+        }
+        
+        // Draw star ID and magnitude for very bright stars (mag < 10) when zoomed in
+        if (star.magnitude < 10.0 && m_zoomFactor > 1.5 && adjustedSize > 8) {
+            painter.setPen(QPen(starColor.lighter(150), 1));
+            QFont font = painter.font();
+            font.setPointSize(qMax(8, qMin(12, int(8 * m_zoomFactor))));
+            painter.setFont(font);
+            
+            QString label = QString("%1").arg(star.magnitude, 0, 'f', 1);
+            QPointF labelPos = scaledPos + QPointF(adjustedSize/2 + 3, -adjustedSize/2);
+            
+            // Draw text background for readability
+            QFontMetrics fm(font);
+            QRect textRect = fm.boundingRect(label);
+            textRect.moveTopLeft(labelPos.toPoint());
+            textRect.adjust(-1, -1, 1, 1);
+            
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(QColor(0, 0, 0, 120));
+            painter.drawRect(textRect);
+            
+            painter.setPen(QPen(Qt::white, 1));
+            painter.drawText(labelPos, label);
+        }
+        
+        starsDrawn++;
+    }
+    
+    qDebug() << QString("Drew %1 catalog stars on image overlay").arg(starsDrawn);
+    
+    // Draw field center and scale reference
+    drawFieldReference(painter, xScale, yScale);
+    
+    painter.setRenderHint(QPainter::Antialiasing, false);
+}
+
+// Add this helper method to draw field reference markers
+void ImageDisplayWidget::drawFieldReference(QPainter& painter, double xScale, double yScale)
+{
+    if (!m_imageData) return;
+    
+    // Draw image center cross
+    painter.setPen(QPen(Qt::yellow, 2));
+    double centerX = m_imageData->width * 0.5 * xScale;
+    double centerY = m_imageData->height * 0.5 * yScale;
+    double crossSize = 20 * m_zoomFactor;
+    
+    painter.drawLine(centerX - crossSize, centerY, centerX + crossSize, centerY);
+    painter.drawLine(centerX, centerY - crossSize, centerX, centerY + crossSize);
+    
+    // Draw magnitude scale legend in corner
+    if (m_validationResults && !m_validationResults->catalogStars.isEmpty() && m_zoomFactor > 0.8) {
+        drawMagnitudeLegend(painter, xScale, yScale);
+    }
+}
+
+// Add this method to draw a magnitude legend
+void ImageDisplayWidget::drawMagnitudeLegend(QPainter& painter, double xScale, double yScale)
+{
+    // Position legend in top-right corner
+    int legendX = painter.device()->width() - 150;
+    int legendY = 10;
+    int legendWidth = 140;
+    int legendHeight = 100;
+    
+    // Semi-transparent background
+    painter.setPen(QPen(Qt::white, 1));
+    painter.setBrush(QColor(0, 0, 0, 150));
+    QRect legendRect(legendX, legendY, legendWidth, legendHeight);
+    painter.drawRect(legendRect);
+    
+    // Title
+    painter.setPen(Qt::white);
+    QFont titleFont = painter.font();
+    titleFont.setBold(true);
+    titleFont.setPointSize(10);
+    painter.setFont(titleFont);
+    painter.drawText(legendX + 5, legendY + 15, "Catalog Stars");
+    
+    // Size scale
+    QFont normalFont = titleFont;
+    normalFont.setBold(false);
+    normalFont.setPointSize(9);
+    painter.setFont(normalFont);
+    
+    // Draw sample stars with sizes
+    static const QMap<QString, QColor> spectralColorMap = {
+        {"O", QColor(155, 176, 255)}, {"B", QColor(170, 191, 255)}, 
+        {"A", QColor(202, 215, 255)}, {"F", QColor(248, 247, 255)}, 
+        {"G", QColor(255, 244, 234)}, {"K", QColor(255, 210, 161)}, 
+        {"M", QColor(255, 204, 111)}
+    };
+    
+    int yOffset = 25;
+    
+    // Show size scale
+    painter.setPen(Qt::lightGray);
+    painter.drawText(legendX + 5, legendY + yOffset, "Size = Brightness");
+    yOffset += 15;
+    
+    // Draw different sized circles
+    for (int i = 0; i < 3; ++i) {
+        double size = 4 + i * 4; // 4, 8, 12 pixel sizes
+        double magnitude = 12.0 - i * 3; // 12, 9, 6 magnitude
+        
+        painter.setPen(QPen(Qt::lightGray, 1));
+        painter.setBrush(Qt::lightGray);
+        painter.drawEllipse(QPointF(legendX + 15, legendY + yOffset), size/2, size/2);
+        
+        painter.setPen(Qt::white);
+        painter.drawText(legendX + 25, legendY + yOffset + 4, 
+                        QString("mag %1").arg(magnitude, 0, 'f', 0));
+        yOffset += 15;
+    }
+    
+    // Show color coding for spectral types (if we have room)
+    if (legendHeight > 80) {
+        painter.setPen(Qt::lightGray);
+        painter.drawText(legendX + 5, legendY + yOffset + 5, "Colors = Spectral Type");
+    }
 }

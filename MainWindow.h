@@ -96,7 +96,13 @@ private slots:
   //    void onTestParameterSensitivity();
     void onDebugStarCorrelation();
     void onWCSDataReceived();
+    void enhanceCatalogDisplay();
+    void onPlotCatalogStarsEnhanced();
+    void debugCatalogDisplayComparison();
+    void syncCatalogDisplays();
+
 private:
+    QPointF calculatePixelPosition(double ra, double dec);
   //    StarMaskResult performStarExtraction();
     void updateStarDisplay(const StarMaskResult& starMask);
     void updateCoordinateDisplay(const WCSData& wcs);
