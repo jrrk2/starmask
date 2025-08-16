@@ -25,6 +25,7 @@
 #include "StarChartWidget.h"
 #include "StarCatalogValidator.h"
 #include "StarMaskGenerator.h"    // NEW: Add this include for StarMaskResult
+#include "ColorAnalysisDialog.h"
 
 class StarStatisticsChartDialog : public QDialog
 {
@@ -32,15 +33,22 @@ class StarStatisticsChartDialog : public QDialog
 
 public:
     // Keep your existing constructor
-    explicit StarStatisticsChartDialog(const QVector<CatalogStar>& catalogStars, 
+    explicit StarStatisticsChartDialog(const ImageData* imageData,
+				       const QVector<CatalogStar>& catalogStars, 
                                        QWidget* parent = nullptr);
     
     // NEW: Add enhanced constructor (minimal version)
-    explicit StarStatisticsChartDialog(const QVector<CatalogStar>& catalogStars,
+    explicit StarStatisticsChartDialog(const ImageData* imageData,
+				       const QVector<CatalogStar>& catalogStars,
                                        const StarMaskResult& detectedStars,
                                        QWidget* parent = nullptr);
     
     ~StarStatisticsChartDialog();
+
+    void updateRGBButtonState();
+    void setImageData(const ImageData* imageData);
+    void setDetectedStars(const QVector<QPoint>& centers, const QVector<float>& radii);
+    void setCatalogStars(const QVector<CatalogStar>& catalogStars);
 
 private slots:
     // Keep all your existing slots
@@ -54,6 +62,7 @@ private slots:
     // NEW: Add these minimal photometry slots
     void onPerformPhotometry();
     void onGeneratePhotometryReport();
+    void onColorAnalysisClicked();
 
 private:
     // Keep all your existing methods
@@ -69,6 +78,7 @@ private:
     void exportChartImage(const QString& fileName);
 
     // Keep all your existing data members
+    const ImageData* m_imageData;
     QVector<CatalogStar> m_catalogStars;
     
     // NEW: Add these minimal data members
@@ -76,6 +86,8 @@ private:
     bool m_hasDetectedStars = false;         // Whether we have detected stars
     bool m_photometryComplete = false;       // Whether photometry analysis is done
     
+    QPushButton* m_colorAnalysisButton;
+    ColorAnalysisDialog* m_colorDialog;
     // Keep all your existing UI components
     QVBoxLayout* m_mainLayout;
     QHBoxLayout* m_controlsLayout;

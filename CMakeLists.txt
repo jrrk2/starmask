@@ -11,7 +11,7 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fsanitize=address")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address")
 
 # Find Qt6
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Charts)
 
 # Set up Qt6 automoc
 set(CMAKE_AUTOMOC ON)
@@ -203,6 +203,8 @@ set(PROJECT_INCLUDE_DIRS
 )
 
 set(SOURCES
+    AstrometryDirectSolver.cpp
+    ColorAnalysisDialog.cpp
     GaiaGDR3Catalog.cpp
     ImageDisplayWidget.cpp
     ImageReader.cpp
@@ -218,7 +220,7 @@ set(SOURCES
     StarStatisticsChartDialog.cpp
     IntegratedPlateSolver.cpp
     PlatesolverSettingsDialog.cpp
-    AstrometryDirectSolver.cpp
+    RGBPhotometryAnalyzer.cpp
     SimplePlatesolver.cpp
     StarCorrelator.cpp
     FITS.cpp
@@ -232,12 +234,16 @@ set(SOURCES
 )
 
 set(HEADERS
+    ColorAnalysisDialog.h
     GaiaGDR3Catalog.h
     ImageDisplayWidget.h
     ImageReader.h
     ImageStatistics.h
     MainWindow.h
+    PCLMockAPI.h
+    PCLThreadMock.h
     PixelMatchingDebugger.h
+    RGBPhotometryAnalyzer.h
     SimplifiedXISFWriter.h
     SimplePlatesolver.h
     StarCatalogValidator.h
@@ -246,9 +252,6 @@ set(HEADERS
     StarMaskGenerator.h
     StarStatisticsChartDialog.h
     structuredefinitions.h
-    PCLMockAPI.h
-    PCLThreadMock.h
-    PixelMatchingDebugger.h
 )
 
 add_executable(StarMaskDemo ${SOURCES} ${HEADERS})
@@ -279,6 +282,7 @@ target_link_libraries(StarMaskDemo PRIVATE
     Qt6::Core
     Qt6::Widgets
     Qt6::Network
+    Qt6::Charts
     pcl_mock          # Add mock library
     ${PCL_LIBRARY}
     pcl_sha

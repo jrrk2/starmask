@@ -1573,13 +1573,14 @@ void MainWindow::onShowCatalogStats()
 
     // NEW: Enhanced constructor with detected stars for photometry
     if (m_starsDetected && !m_lastStarMask.starCenters.isEmpty()) {
-        auto* dialog = new StarStatisticsChartDialog(catalogStars, 
-                                                    m_lastStarMask, 
-                                                    this);
+        auto* dialog = new StarStatisticsChartDialog(m_imageData,
+						     catalogStars, 
+                                                     m_lastStarMask, 
+                                                     this);
         dialog->show();
     } else {
         // Fallback to original catalog-only dialog
-        auto* dialog = new StarStatisticsChartDialog(catalogStars, this);
+        auto* dialog = new StarStatisticsChartDialog(m_imageData, catalogStars, this);
         dialog->show();
     }
 }    
@@ -3272,6 +3273,6 @@ void MainWindow::onPhotometryAnalysis()
         return;
     }
     
-    auto* dialog = new StarStatisticsChartDialog(catalogStars, m_lastStarMask, this);
+    auto* dialog = new StarStatisticsChartDialog(m_imageData, catalogStars, m_lastStarMask, this);
     dialog->show();
 }

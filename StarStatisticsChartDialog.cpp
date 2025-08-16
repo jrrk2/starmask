@@ -22,9 +22,11 @@
 #include <QSpinBox>
 
 // Keep your existing basic constructor unchanged
-StarStatisticsChartDialog::StarStatisticsChartDialog(const QVector<CatalogStar>& catalogStars, 
+StarStatisticsChartDialog::StarStatisticsChartDialog(const ImageData* imageData,
+						     const QVector<CatalogStar>& catalogStars, 
                                                      QWidget* parent)
     : QDialog(parent)
+    , m_imageData(imageData)
     , m_catalogStars(catalogStars)
     , m_currentPlotMode(MagnitudeVsSpectralType)
     , m_currentColorScheme(SpectralTypeColors)
@@ -32,21 +34,25 @@ StarStatisticsChartDialog::StarStatisticsChartDialog(const QVector<CatalogStar>&
     , m_showGrid(true)
     , m_hasDetectedStars(false)
     , m_photometryComplete(false)
+    , m_colorDialog(nullptr)
 {
     setWindowTitle("Star Catalog Statistics - Interactive Chart");
     resize(1200, 800);
     setMinimumSize(800, 600);
     
-    setupUI();
+    setupUI();    
     updateStatistics();
     updateChart();
+    updateRGBButtonState();
 }
 
 // NEW: Enhanced constructor - simplified version
-StarStatisticsChartDialog::StarStatisticsChartDialog(const QVector<CatalogStar>& catalogStars,
+StarStatisticsChartDialog::StarStatisticsChartDialog(const ImageData* imageData,
+						     const QVector<CatalogStar>& catalogStars,
                                                      const StarMaskResult& detectedStars,
                                                      QWidget* parent)
     : QDialog(parent)
+    , m_imageData(imageData)
     , m_catalogStars(catalogStars)
     , m_detectedStars(detectedStars)
     , m_currentPlotMode(MagnitudeVsSpectralType)  // Start with basic mode
@@ -55,6 +61,7 @@ StarStatisticsChartDialog::StarStatisticsChartDialog(const QVector<CatalogStar>&
     , m_showGrid(true)
     , m_hasDetectedStars(true)
     , m_photometryComplete(false)
+    , m_colorDialog(nullptr)
 {
     setWindowTitle("Enhanced Star Statistics & Photometry Analysis");
     resize(1400, 900);
@@ -63,6 +70,7 @@ StarStatisticsChartDialog::StarStatisticsChartDialog(const QVector<CatalogStar>&
     setupUI();
     updateStatistics();
     updateChart();
+    updateRGBButtonState();
     
     // Show info about photometry capability
     QTimer::singleShot(100, [this]() {
@@ -152,6 +160,28 @@ void StarStatisticsChartDialog::setupUI()
     buttonLayout->addWidget(m_closeButton);
     
     m_mainLayout->addLayout(buttonLayout);
+
+    m_colorAnalysisButton = new QPushButton("RGB Color Analysis");
+    m_colorAnalysisButton->setEnabled(false);
+    connect(m_colorAnalysisButton, &QPushButton::clicked,
+	    this, &StarStatisticsChartDialog::onColorAnalysisClicked);
+
+    // Add to your layout where appropriate
+    buttonLayout->addWidget(m_colorAnalysisButton);    
+}
+
+void StarStatisticsChartDialog::onColorAnalysisClicked()
+{
+    if (!m_colorDialog) {
+      m_colorDialog = new ColorAnalysisDialog(m_imageData,
+					      m_detectedStars.starCenters,
+					      m_detectedStars.starRadii,
+					      m_catalogStars,
+					      this);
+    }
+    
+    m_colorDialog->show();
+    m_colorDialog->raise();
 }
 
 void StarStatisticsChartDialog::setupControls()
@@ -472,6 +502,9 @@ void StarStatisticsChartDialog::onPerformPhotometry()
     }
     
     m_photometryComplete = true;
+
+    m_colorAnalysisButton->setEnabled(m_imageData->channels >= 3);
+    updateRGBButtonState();
     
     QMessageBox::information(this, "Photometry Complete", 
                            "Basic photometry analysis completed.\nSee results panel for details.");
@@ -556,4 +589,89 @@ QString StarStatisticsChartDialog::formatStarInfo(const CatalogStar& star) const
                    .arg(star.pixelPos.y(), 0, 'f', 1);
     
     return info;
+}
+
+
+void StarStatisticsChartDialog::updateRGBButtonState()
+{
+    // Debug information
+    bool hasImageData = m_imageData->isValid();
+    bool hasRGBChannels = m_imageData->channels >= 3;
+    bool hasDetectedStars = !m_detectedStars.starCenters.isEmpty();
+    bool hasCatalogStars = !m_catalogStars.isEmpty();
+    
+    qDebug() << "=== RGB Button State Debug ===";
+    qDebug() << "Has valid image data:" << hasImageData;
+    if (hasImageData) {
+        qDebug() << "Image dimensions:" << m_imageData->width << "x" << m_imageData->height;
+        qDebug() << "Image channels:" << m_imageData->channels;
+        qDebug() << "Color space:" << m_imageData->colorSpace;
+        qDebug() << "Pixel data size:" << m_imageData->pixels.size();
+    }
+    qDebug() << "Has RGB channels (>=3):" << hasRGBChannels;
+    qDebug() << "Has detected stars:" << hasDetectedStars;
+    if (hasDetectedStars) {
+        qDebug() << "Number of detected stars:" << m_detectedStars.starCenters.size();
+    }
+    qDebug() << "Has catalog stars:" << hasCatalogStars;
+    if (hasCatalogStars) {
+        qDebug() << "Number of catalog stars:" << m_catalogStars.size();
+    }
+    
+    // Button should be enabled if we have RGB image AND detected stars
+    bool shouldEnable = hasImageData && hasRGBChannels && hasDetectedStars;
+    
+    qDebug() << "RGB Color Analysis button should be enabled:" << shouldEnable;
+    
+    if (m_colorAnalysisButton) {
+        m_colorAnalysisButton->setEnabled(shouldEnable);
+        
+        // Update tooltip with helpful information
+        QString tooltip;
+        if (!hasImageData) {
+            tooltip = "No image data loaded";
+        } else if (!hasRGBChannels) {
+            tooltip = QString("Requires RGB image (current: %1 channels)").arg(m_imageData->channels);
+        } else if (!hasDetectedStars) {
+            tooltip = "No stars detected - run star detection first";
+        } else {
+            tooltip = QString("Analyze colors of %1 detected stars").arg(m_detectedStars.starCenters.size());
+        }
+        
+        m_colorAnalysisButton->setToolTip(tooltip);
+    }
+    
+    qDebug() << "=== End RGB Button Debug ===\n";
+}
+
+void StarStatisticsChartDialog::setImageData(const ImageData* imageData)
+{
+    m_imageData = imageData;
+    
+    // Add debug output:
+    qDebug() << "StarStatisticsChartDialog::setImageData called";
+    qDebug() << "Image valid:" << imageData->isValid();
+    qDebug() << "Image channels:" << imageData->channels;
+    qDebug() << "Image color space:" << imageData->colorSpace;
+    
+    updateRGBButtonState();
+}
+
+void StarStatisticsChartDialog::setDetectedStars(const QVector<QPoint>& centers, const QVector<float>& radii)
+{
+    m_detectedStars.starCenters = centers;
+    m_detectedStars.starRadii = radii;
+    
+    qDebug() << "StarStatisticsChartDialog::setDetectedStars called with" << centers.size() << "stars";
+    
+    updateRGBButtonState();
+}
+
+void StarStatisticsChartDialog::setCatalogStars(const QVector<CatalogStar>& catalogStars)
+{
+    m_catalogStars = catalogStars;
+    
+    qDebug() << "StarStatisticsChartDialog::setCatalogStars called with" << catalogStars.size() << "stars";
+    
+    updateRGBButtonState();
 }
