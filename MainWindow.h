@@ -30,6 +30,7 @@
 #include "ImageReader.h"
 #include "StarMaskGenerator.h"
 #include "PixelMatchingDebugger.h" // Include the debugger header
+#include "BackgroundExtractor.h"
 
 class MainWindow : public QMainWindow
 {
@@ -101,6 +102,12 @@ private slots:
     void debugCatalogDisplayComparison();
     void syncCatalogDisplays();
     void onPhotometryAnalysis();
+    // Background neutralization slots
+    void setupBackgroundNeutralizationControls();
+    void onBackgroundNeutralization();
+    void onBackgroundExtractionFinished(bool success, const QString& errorMessage);
+    void onPreviewNeutralization();
+    void updateNeutralizationSettings();
   
 private:
     QPointF calculatePixelPosition(double ra, double dec);
@@ -161,6 +168,18 @@ private:
     double calculateFieldRadius(const pcl::AstrometricMetadata& result);
     QString formatRACoordinates(double ra);
     QString formatDecCoordinates(double dec);
+    // Background neutralization components
+    QPushButton* m_backgroundNeutralizationButton;
+    QGroupBox* m_backgroundNeutralizationGroup;
+    QVBoxLayout* m_backgroundNeutralizationLayout;
+    
+    // Background extractor instance
+    std::unique_ptr<BackgroundExtractor> m_backgroundExtractor;
+    
+    // Background neutralization settings
+    QComboBox* m_neutralizationModeCombo;
+    QDoubleSpinBox* m_neutralizationStrengthSpin;
+    QCheckBox* m_previewNeutralizationCheck;
     
   //    ExtractStarsWithPlateSolve* m_platesolveIntegration;
     SimplePlatesolver* m_platesolveIntegration;

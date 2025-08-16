@@ -1404,8 +1404,9 @@ void MainWindow::setupUI()
     rightLayout->addWidget(m_starDetectionGroup);
     
     setupCatalogPlottingControls();
-    
     rightLayout->addWidget(m_plottingGroup);
+    setupBackgroundNeutralizationControls();
+    rightLayout->addWidget(m_backgroundNeutralizationGroup);    
 
     setupEnhancedMatchingControls();
     mainSplitter->addWidget(m_enhancedMatchingGroup);
@@ -1472,6 +1473,8 @@ void MainWindow::onLoadImage()
     
     // Update UI state
     m_starDetectionGroup->setEnabled(true);  // Enable star detection controls
+    m_backgroundNeutralizationGroup->setEnabled(true); // Enable neutralisation
+
     m_plotCatalogButton->setEnabled(m_hasWCS);
     m_starsDetected = false;
     m_catalogQueried = false;
@@ -3275,4 +3278,243 @@ void MainWindow::onPhotometryAnalysis()
     
     auto* dialog = new StarStatisticsChartDialog(m_imageData, catalogStars, m_lastStarMask, this);
     dialog->show();
+}
+
+void MainWindow::setupBackgroundNeutralizationControls()
+{
+    // Create background neutralization group
+    m_backgroundNeutralizationGroup = new QGroupBox("Background/Gradient Neutralization");
+    m_backgroundNeutralizationLayout = new QVBoxLayout(m_backgroundNeutralizationGroup);
+    
+    // Neutralization mode selection
+    QHBoxLayout* modeLayout = new QHBoxLayout;
+    modeLayout->addWidget(new QLabel("Mode:"));
+    m_neutralizationModeCombo = new QComboBox;
+    m_neutralizationModeCombo->addItem("Per-Channel Neutralization", "per_channel");
+    m_neutralizationModeCombo->addItem("Automatic Gradient Removal", "auto");
+    m_neutralizationModeCombo->addItem("Luminance Only", "luminance");
+    m_neutralizationModeCombo->addItem("Combined RGB", "combined");
+    m_neutralizationModeCombo->setCurrentIndex(0);
+    m_neutralizationModeCombo->setToolTip("Select background neutralization approach");
+    modeLayout->addWidget(m_neutralizationModeCombo);
+    m_backgroundNeutralizationLayout->addLayout(modeLayout);
+    
+    // Neutralization strength
+    QHBoxLayout* strengthLayout = new QHBoxLayout;
+    strengthLayout->addWidget(new QLabel("Strength:"));
+    m_neutralizationStrengthSpin = new QDoubleSpinBox;
+    m_neutralizationStrengthSpin->setRange(0.1, 2.0);
+    m_neutralizationStrengthSpin->setValue(1.0);
+    m_neutralizationStrengthSpin->setSingleStep(0.1);
+    m_neutralizationStrengthSpin->setDecimals(1);
+    m_neutralizationStrengthSpin->setToolTip("Neutralization strength (0.1=subtle, 2.0=aggressive)");
+    strengthLayout->addWidget(m_neutralizationStrengthSpin);
+    m_backgroundNeutralizationLayout->addLayout(strengthLayout);
+    
+    // Preview option
+    m_previewNeutralizationCheck = new QCheckBox("Live Preview");
+    m_previewNeutralizationCheck->setChecked(false);
+    m_previewNeutralizationCheck->setToolTip("Show preview of neutralization effect");
+    m_backgroundNeutralizationLayout->addWidget(m_previewNeutralizationCheck);
+    
+    // Main neutralization button
+    m_backgroundNeutralizationButton = new QPushButton("Apply Background Neutralization");
+    m_backgroundNeutralizationButton->setToolTip("Remove background gradients and neutralize color casts");
+    m_backgroundNeutralizationButton->setEnabled(true);
+    /*
+    m_backgroundNeutralizationButton->setStyleSheet(
+        "QPushButton {"
+        "    background-color: #4CAF50;"
+        "    color: white;"
+        "    border: none;"
+        "    padding: 8px 16px;"
+        "    font-weight: bold;"
+        "    border-radius: 4px;"
+        "}"
+        "QPushButton:hover {"
+        "    background-color: #45a049;"
+        "}"
+        "QPushButton:pressed {"
+        "    background-color: #3d8b40;"
+        "}"
+        "QPushButton:disabled {"
+        "    background-color: #cccccc;"
+        "    color: #666666;"
+        "}"
+    );
+    */
+    m_backgroundNeutralizationLayout->addWidget(m_backgroundNeutralizationButton);
+    m_backgroundNeutralizationGroup->setEnabled(true);
+    // Preview button
+    QPushButton* previewButton = new QPushButton("Preview Neutralization");
+    previewButton->setToolTip("Preview the neutralization effect without applying");
+    m_backgroundNeutralizationLayout->addWidget(previewButton);
+    
+    // Connect signals
+    connect(m_backgroundNeutralizationButton, &QPushButton::clicked, 
+            this, &MainWindow::onBackgroundNeutralization);
+    connect(previewButton, &QPushButton::clicked, 
+            this, &MainWindow::onPreviewNeutralization);
+    connect(m_neutralizationModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::updateNeutralizationSettings);
+    connect(m_neutralizationStrengthSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+            this, &MainWindow::updateNeutralizationSettings);
+    
+    // Initially disable until image is loaded
+    m_backgroundNeutralizationGroup->setEnabled(false);    
+}
+
+void MainWindow::onBackgroundNeutralization()
+{
+    if (!m_imageReader || !m_imageReader->hasImage()) {
+        m_statusLabel->setText("No image loaded for background neutralization");
+        QMessageBox::warning(this, "Background Neutralization", 
+                           "Please load an image first.");
+        return;
+    }
+    
+    if (!m_backgroundExtractor) {
+        // Initialize the background extractor
+        m_backgroundExtractor = std::make_unique<BackgroundExtractor>(this);
+        
+        // Connect signals
+        connect(m_backgroundExtractor.get(), &BackgroundExtractor::extractionFinished,
+                this, &MainWindow::onBackgroundExtractionFinished);
+        connect(m_backgroundExtractor.get(), &BackgroundExtractor::progress,
+                [this](int percentage, const QString& message) {
+                    m_statusLabel->setText(QString("Background extraction: %1% - %2")
+                                         .arg(percentage).arg(message));
+                });
+    }
+    
+    // Disable button during processing
+    //    m_backgroundNeutralizationButton->setEnabled(false);
+    m_backgroundNeutralizationButton->setText("Processing...");
+    
+    // Configure background extraction settings based on user selection
+    BackgroundExtractionSettings settings;
+    QString mode = m_neutralizationModeCombo->currentData().toString();
+    double strength = m_neutralizationStrengthSpin->value();
+    
+    if (mode == "auto") {
+        settings = BackgroundExtractor::getDefaultSettings();
+        settings.channelMode = ChannelMode::Combined;
+    } else if (mode == "per_channel") {
+        settings = BackgroundExtractor::getPerChannelSettings();
+        settings.channelMode = ChannelMode::PerChannel;
+    } else if (mode == "luminance") {
+        settings = BackgroundExtractor::getLuminanceOnlySettings();
+        settings.channelMode = ChannelMode::LuminanceOnly;
+    } else if (mode == "combined") {
+        settings = BackgroundExtractor::getAstronomyRGBSettings();
+        settings.channelMode = ChannelMode::Combined;
+    }
+    
+    // Adjust settings based on strength
+    settings.tolerance *= strength;
+    settings.deviation *= strength;
+    
+    m_backgroundExtractor->setSettings(settings);
+    
+    // Start background extraction
+    m_statusLabel->setText("Starting background neutralization...");
+    if (!m_backgroundExtractor->extractBackgroundAsync(*m_imageData)) {
+        m_statusLabel->setText("Failed to start background extraction");
+        m_backgroundNeutralizationButton->setEnabled(true);
+        m_backgroundNeutralizationButton->setText("Apply Background Neutralization");
+        QMessageBox::warning(this, "Background Neutralization", 
+                           "Failed to start background extraction process.");
+    }
+}
+
+void MainWindow::onBackgroundExtractionFinished(bool success, const QString& errorMessage)
+{
+    // Re-enable button
+    m_backgroundNeutralizationButton->setEnabled(true);
+    m_backgroundNeutralizationButton->setText("Apply Background Neutralization");
+    
+    if (!success) {
+        m_statusLabel->setText(QString("Background neutralization failed: %1").arg(errorMessage));
+        QMessageBox::warning(this, "Background Neutralization Failed", 
+                           QString("Background neutralization failed:\n%1").arg(errorMessage));
+        return;
+    }
+    
+    // Get the result
+    const BackgroundExtractionResult& result = m_backgroundExtractor->result();
+    if (!result.success || result.correctedData.isEmpty()) {
+        m_statusLabel->setText("Background neutralization completed but no corrected data available");
+        return;
+    }
+    
+    // Apply the corrected data to the image
+    try {
+        // Create new image data with corrected background
+        ImageData correctedImageData = *m_imageData;
+        correctedImageData.pixels = result.correctedData;
+        correctedImageData.format = m_imageData->format + " (Background Neutralized)";
+        
+        // Update the image reader with corrected data
+        m_imageReader->setImageData(correctedImageData);
+        
+        // Update the display
+        if (m_imageDisplayWidget) {
+            m_imageDisplayWidget->setImageData(correctedImageData);
+        }
+        
+        // Show detailed results
+        QStringList resultDetails;
+        
+        for (int i = 0; i < result.channelResults.size(); ++i) {
+            const ChannelResult& channelResult = result.channelResults[i];
+            resultDetails << QString("(%1: %2 samples, level: %3) ")
+	      .arg(i == 0? "Red": i == 1? "Green": i == 2? "Blue" : QString("Chan %1").arg(i))
+                            .arg(channelResult.samplesUsed)
+                            .arg(channelResult.backgroundLevel, 0, 'f', 4);
+        }
+        
+         m_statusLabel->setText(QString("Neutralization completed in %1 seconds %2")
+                             .arg(result.processingTimeSeconds, 0, 'f', 2)
+				.arg(resultDetails.join(" ")));
+                               
+    } catch (const std::exception& e) {
+        m_statusLabel->setText(QString("Error applying neutralized background: %1").arg(e.what()));
+        QMessageBox::warning(this, "Background Neutralization Error", 
+                           QString("Error applying neutralized background:\n%1").arg(e.what()));
+    }
+}
+
+void MainWindow::onPreviewNeutralization()
+{
+    if (!m_imageReader || !m_imageReader->hasImage()) {
+        QMessageBox::information(this, "Preview", "Please load an image first.");
+        return;
+    }
+    
+    // For now, just show a preview dialog with current settings
+    QString mode = m_neutralizationModeCombo->currentText();
+    double strength = m_neutralizationStrengthSpin->value();
+    
+    QMessageBox::information(this, "Neutralization Preview", 
+                           QString("Preview Settings:\n"
+                                 "Mode: %1\n"
+                                 "Strength: %2\n\n"
+                                 "Click 'Apply Background Neutralization' to process the image.")
+                           .arg(mode).arg(strength));
+}
+
+void MainWindow::updateNeutralizationSettings()
+{
+    // Update tooltips and interface based on current settings
+    QString mode = m_neutralizationModeCombo->currentData().toString();
+    
+    if (mode == "auto") {
+        m_neutralizationStrengthSpin->setToolTip("Automatic gradient removal strength");
+    } else if (mode == "per_channel") {
+        m_neutralizationStrengthSpin->setToolTip("Per-channel neutralization intensity");
+    } else if (mode == "luminance") {
+        m_neutralizationStrengthSpin->setToolTip("Luminance-based neutralization strength");
+    } else if (mode == "combined") {
+        m_neutralizationStrengthSpin->setToolTip("Combined RGB neutralization strength");
+    }
 }

@@ -204,22 +204,23 @@ set(PROJECT_INCLUDE_DIRS
 
 set(SOURCES
     AstrometryDirectSolver.cpp
+    BackgroundExtractor.cpp
     ColorAnalysisDialog.cpp
     GaiaGDR3Catalog.cpp
     ImageDisplayWidget.cpp
     ImageReader.cpp
     ImageStatistics.cpp
+    IntegratedPlateSolver.cpp
     main.cpp
     MainWindow.cpp
     PixelMatchingDebugger.cpp
+    PlatesolverSettingsDialog.cpp
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
     StarChartWidget.cpp
     StarCorrelator.cpp
     StarMaskGenerator.cpp
     StarStatisticsChartDialog.cpp
-    IntegratedPlateSolver.cpp
-    PlatesolverSettingsDialog.cpp
     RGBPhotometryAnalyzer.cpp
     SimplePlatesolver.cpp
     StarCorrelator.cpp
@@ -234,6 +235,7 @@ set(SOURCES
 )
 
 set(HEADERS
+    BackgroundExtractor.h
     ColorAnalysisDialog.h
     GaiaGDR3Catalog.h
     ImageDisplayWidget.h
