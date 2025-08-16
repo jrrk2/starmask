@@ -57,7 +57,7 @@ SolverWorker::~SolverWorker()
     cleanupEngine();
 }
 
-void SolverWorker::solvePlate(const QVector<DetectedStar>& stars, const SolveOptions& options)
+void SolverWorker::solvePlate(const QVector<SolveDetectedStar>& stars, const SolveOptions& options)
 {
     emit solveProgress("Initializing astrometry engine...");
     
@@ -203,7 +203,7 @@ QString SolverWorker::findDefaultConfigFile()
     return "none";
 }
 
-job_t* SolverWorker::createJobFromStars(const QVector<DetectedStar>& stars, const SolveOptions& options)
+job_t* SolverWorker::createJobFromStars(const QVector<SolveDetectedStar>& stars, const SolveOptions& options)
 {
     // Create a job_t structure directly from the star data (like your starlist solver)
     
@@ -271,7 +271,7 @@ job_t* SolverWorker::createJobFromStars(const QVector<DetectedStar>& stars, cons
     return job;
 }
 
-bool SolverWorker::createInMemoryXylist(job_t* job, const QVector<DetectedStar>& stars, const SolveOptions& options)
+bool SolverWorker::createInMemoryXylist(job_t* job, const QVector<SolveDetectedStar>& stars, const SolveOptions& options)
 {
     // Create a temporary file to hold the xylist data (like your starlist solver)
     char tempName[] = "/tmp/astro_stars_XXXXXX.xyls";
@@ -306,7 +306,7 @@ bool SolverWorker::createInMemoryXylist(job_t* job, const QVector<DetectedStar>&
     // Add stars to xylist
     starxy_t* sxy = starxy_new(stars.size(), TRUE, FALSE);
     for (int i = 0; i < stars.size(); ++i) {
-        const DetectedStar& star = stars[i];
+        const SolveDetectedStar& star = stars[i];
         starxy_set_x(sxy, i, star.x);
         starxy_set_y(sxy, i, star.y);
         starxy_set_flux(sxy, i, star.flux);
@@ -573,8 +573,8 @@ void IntegratedPlateSolver::solveFromStarMask(const QVector<QPoint>& starCenters
     
     astrometry_direct(stars);
     
-    // Convert to DetectedStar format
-    //    QVector<DetectedStar> stars = convertStarsFromMask(starCenters, starFluxes);
+    // Convert to SolveDetectedStar format
+    //    QVector<SolveDetectedStar> stars = convertStarsFromMask(starCenters, starFluxes);
     
     // Update image dimensions
     m_options.imageWidth = imageData->width;
@@ -583,7 +583,7 @@ void IntegratedPlateSolver::solveFromStarMask(const QVector<QPoint>& starCenters
     // solveFromDetectedStars(stars, imageData->width, imageData->height);
 }
 
-void IntegratedPlateSolver::solveFromDetectedStars(const QVector<DetectedStar>& stars,
+void IntegratedPlateSolver::solveFromDetectedStars(const QVector<SolveDetectedStar>& stars,
                                                   int imageWidth, int imageHeight)
 {
     if (m_solving) {
@@ -604,11 +604,11 @@ void IntegratedPlateSolver::solveFromDetectedStars(const QVector<DetectedStar>& 
     m_options.imageHeight = imageHeight;
     
     // Limit number of stars if necessary
-    QVector<DetectedStar> limitedStars = stars;
+    QVector<SolveDetectedStar> limitedStars = stars;
     if (limitedStars.size() > m_options.maxStars) {
         // Sort by flux (brightest first) and take top N
         std::sort(limitedStars.begin(), limitedStars.end(), 
-                  [](const DetectedStar& a, const DetectedStar& b) {
+                  [](const SolveDetectedStar& a, const SolveDetectedStar& b) {
                       return a.flux > b.flux;
                   });
         limitedStars.resize(m_options.maxStars);
@@ -623,7 +623,7 @@ void IntegratedPlateSolver::solveFromDetectedStars(const QVector<DetectedStar>& 
     
     // Trigger solve in worker thread
     QMetaObject::invokeMethod(m_solverWorker, "solvePlate", Qt::QueuedConnection,
-                              Q_ARG(QVector<DetectedStar>, limitedStars),
+                              Q_ARG(QVector<SolveDetectedStar>, limitedStars),
                               Q_ARG(SolveOptions, m_options));
 }
 

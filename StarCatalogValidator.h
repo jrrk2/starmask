@@ -99,7 +99,13 @@ struct CatalogStar {
     QString spectralType;   // Spectral type (if available)
     QPointF pixelPos;       // Calculated pixel position
     bool isValid = false;
-    
+
+    // NEW: Add optional enhanced photometry fields
+    double magBP = 0.0;
+    double magRP = 0.0;
+    double colorBP_RP = 0.0;
+    bool hasExtendedData = false;
+
     CatalogStar() = default;
     CatalogStar(const QString& starId, double rightAsc, double declin, double mag)
         : id(starId), ra(rightAsc), dec(declin), magnitude(mag), isValid(true) {}
@@ -345,7 +351,7 @@ public:
     
     // Results access
     ValidationResult getLastValidation() const { return m_lastValidation; }
-    QVector<CatalogStar> getCatalogStars() const { return m_catalogStars; }
+    QVector<CatalogStar> getCatalogStars();
     void showCatalogStats() const;
     
     // Utility

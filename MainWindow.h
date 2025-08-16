@@ -100,7 +100,8 @@ private slots:
     void onPlotCatalogStarsEnhanced();
     void debugCatalogDisplayComparison();
     void syncCatalogDisplays();
-
+    void onPhotometryAnalysis();
+  
 private:
     QPointF calculatePixelPosition(double ra, double dec);
   //    StarMaskResult performStarExtraction();

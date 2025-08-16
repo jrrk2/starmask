@@ -210,15 +210,17 @@ set(SOURCES
     main.cpp
     MainWindow.cpp
     PixelMatchingDebugger.cpp
-    StarCatalogValidator.cpp
     SimplifiedXISFWriter.cpp
     StarCatalogValidator.cpp
+    StarChartWidget.cpp
+    StarCorrelator.cpp
     StarMaskGenerator.cpp
     StarStatisticsChartDialog.cpp
     IntegratedPlateSolver.cpp
     PlatesolverSettingsDialog.cpp
     AstrometryDirectSolver.cpp
     SimplePlatesolver.cpp
+    StarCorrelator.cpp
     FITS.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFF.cpp
     ${PCL_ROOT}/src/modules/file-formats/TIFF/TIFFFormat.cpp
@@ -239,6 +241,7 @@ set(HEADERS
     SimplifiedXISFWriter.h
     SimplePlatesolver.h
     StarCatalogValidator.h
+    StarChartWidget.h
     StarCorrelator.h
     StarMaskGenerator.h
     StarStatisticsChartDialog.h

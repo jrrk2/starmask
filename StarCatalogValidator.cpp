@@ -978,7 +978,15 @@ void StarCatalogValidator::queryGaiaDR3(double centerRA, double centerDec, doubl
             catalogStar.dec = gaiaStar.dec;
             catalogStar.magnitude = gaiaStar.magnitude;
             catalogStar.spectralType = gaiaStar.spectralClass;
-            
+
+	    // NEW: Add enhanced Gaia photometry
+	    catalogStar.magBP = gaiaStar.magBP;
+	    catalogStar.magRP = gaiaStar.magRP;
+	    if (gaiaStar.magBP > 0 && gaiaStar.magRP > 0) {
+		catalogStar.colorBP_RP = gaiaStar.magBP - gaiaStar.magRP;
+		catalogStar.hasExtendedData = true;
+            }
+	    
             // Calculate pixel position using our WCS
             catalogStar.pixelPos = skyToPixel(gaiaStar.ra, gaiaStar.dec);
             
@@ -2565,4 +2573,20 @@ void StarCatalogValidator::showBasicWCSInfoFromPCL()
     
     // Quality
     qDebug() << QString("Status: %1").arg(m_astrometricMetadata.IsValid() ? "Valid" : "Invalid");
+}
+
+QVector<CatalogStar> StarCatalogValidator::getCatalogStars() {
+  if (!m_catalogStars.size())
+    {
+      // Need to query catalog first
+      double crval1, crval2;
+      getCenter(crval1, crval2);
+      int width =  getWidth();
+      int height = getHeight();
+      double pixscale = getPixScale();
+      double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
+      fieldRadius = std::max(fieldRadius, 0.5);
+      queryCatalog(crval1, crval2, fieldRadius);
+    }
+  return m_catalogStars;
 }

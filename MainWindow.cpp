@@ -1561,12 +1561,6 @@ void MainWindow::setupGaiaDR3Catalog()
 
 void MainWindow::onShowCatalogStats()
 {
-    if (!m_catalogQueried) {
-        QMessageBox::information(this, "No Catalog Data", 
-            "Please query the catalog first using 'Plot Catalog' or validation.");
-        return;
-    }
-    
     QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
     
     if (catalogStars.isEmpty()) {
@@ -1576,12 +1570,19 @@ void MainWindow::onShowCatalogStats()
     
     // Show the existing text statistics (keep your current logging)
     m_catalogValidator->showCatalogStats();
-    
-    // Create and show the interactive chart dialog
-    StarStatisticsChartDialog* chartDialog = new StarStatisticsChartDialog(catalogStars, this);
-    chartDialog->setAttribute(Qt::WA_DeleteOnClose);
-    chartDialog->exec();
-}
+
+    // NEW: Enhanced constructor with detected stars for photometry
+    if (m_starsDetected && !m_lastStarMask.starCenters.isEmpty()) {
+        auto* dialog = new StarStatisticsChartDialog(catalogStars, 
+                                                    m_lastStarMask, 
+                                                    this);
+        dialog->show();
+    } else {
+        // Fallback to original catalog-only dialog
+        auto* dialog = new StarStatisticsChartDialog(catalogStars, this);
+        dialog->show();
+    }
+}    
 
 // Update the catalog menu setup for Gaia:
 void MainWindow::setupCatalogMenu()
@@ -1656,6 +1657,24 @@ void MainWindow::setupCatalogMenu()
     
     QAction* performanceAction = catalogMenu->addAction("Test Gaia performance");
     connect(performanceAction, &QAction::triggered, this, &MainWindow::testGaiaPerformance);
+
+    QAction* photometryAction = catalogMenu->addAction("Photometry Analysis...");
+    photometryAction->setEnabled(false); // Enable when both datasets available
+    connect(photometryAction, &QAction::triggered, this, &MainWindow::onPhotometryAnalysis);
+    
+    // Update enabling logic
+    connect(m_detectAdvancedButton, &QPushButton::clicked, [photometryAction, this]() {
+      QTimer::singleShot(100, [photometryAction, this]() {
+        photometryAction->setEnabled(m_starsDetected);
+      });
+    });
+
+    connect(m_catalogValidator.get(), &StarCatalogValidator::catalogQueryFinished,
+	    [photometryAction, this](bool success, const QString&) {
+	      if (success) {
+                photometryAction->setEnabled(m_starsDetected);
+	      }
+	    });    
 }
 
 // Add file browser for Gaia catalog:
@@ -1687,7 +1706,6 @@ void MainWindow::browseGaiaCatalogFile()
         }
         
         // Clear previous catalog data
-        m_catalogQueried = false;
         m_catalogPlotted = false;
         updateValidationControls();
         updatePlottingControls();
@@ -2039,7 +2057,6 @@ MainWindow::MainWindow(QWidget* parent)
     , m_imageData(nullptr)
     , m_hasWCS(false)
     , m_starsDetected(false)
-    , m_catalogQueried(false)
     , m_validationComplete(false)
     , m_plotMode(false)
     , m_catalogPlotted(false)
@@ -2064,7 +2081,6 @@ MainWindow::MainWindow(QWidget* parent)
 
       connect(m_fieldRadiusSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
             [this](double) {
-                m_catalogQueried = false;
                 m_catalogPlotted = false;
                 updatePlottingControls();
             });
@@ -2139,34 +2155,12 @@ void MainWindow::onPlotCatalogStars()
 
 void MainWindow::onDebugStarCorrelation()
 {
-    if (!m_catalogQueried) {
-      return;
-    }
-
     QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
     StarMaskGenerator::dumpcat(catalogStars);
 }
 
 void MainWindow::plotCatalogStarsDirectly()
 {
-  double crval1, crval2;
-  m_catalogValidator->getCenter(crval1, crval2);
- 
-    if (!m_catalogQueried) {
-        // Need to query catalog first
-      int width =  m_catalogValidator->getWidth();
-      int height = m_catalogValidator->getHeight();
-      double pixscale = m_catalogValidator->getPixScale();
-      double fieldRadius = sqrt(width * width + height * height) * pixscale / 3600.0 / 2.0;
-      fieldRadius = std::max(fieldRadius, 0.5);
-        
-        // Set magnitude limit from plotting controls
-	//        m_catalogValidator->setMagnitudeLimit(m_plotMagnitudeSpin->value());
-        
-        m_catalogValidator->queryCatalog(crval1, crval2, fieldRadius);
-    }
-
-    // Catalog already queried, just display it
     QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
     StarMaskGenerator::dumpcat(catalogStars);
     // Create a validation result just for display purposes
@@ -3260,4 +3254,24 @@ void MainWindow::syncCatalogDisplays()
     }
     
     qDebug() << QString("Synced %1 catalog stars to image overlay").arg(catalogStars.size());
+}
+
+void MainWindow::onPhotometryAnalysis()
+{
+    // Ensure both the chart dialog and image overlay show the same data
+    QVector<CatalogStar> catalogStars = m_catalogValidator->getCatalogStars();
+    
+    if (catalogStars.isEmpty()) {
+        qDebug() << "No catalog stars to sync";
+        return;
+    }
+    
+    if (!m_starsDetected || !m_catalogQueried) {
+        QMessageBox::information(this, "Photometry Analysis", 
+                               "Please detect stars and query catalog first.");
+        return;
+    }
+    
+    auto* dialog = new StarStatisticsChartDialog(catalogStars, m_lastStarMask, this);
+    dialog->show();
 }

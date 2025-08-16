@@ -38,15 +38,15 @@ extern "C" {
 }
 
 // Structure for detected stars (matching your starlist solver)
-struct DetectedStar {
+struct SolveDetectedStar {
     double x = 0.0;
     double y = 0.0;
     double flux = 1000.0;
     double radius = 5.0;
     double snr = 10.0;
     
-    DetectedStar() = default;
-    DetectedStar(double x_, double y_, double flux_ = 1000.0, double radius_ = 5.0) 
+    SolveDetectedStar() = default;
+    SolveDetectedStar(double x_, double y_, double flux_ = 1000.0, double radius_ = 5.0) 
         : x(x_), y(y_), flux(flux_), radius(radius_) {}
 };
 
@@ -85,7 +85,7 @@ public:
     ~SolverWorker();
 
 public slots:
-    void solvePlate(const QVector<DetectedStar>& stars, const SolveOptions& options);
+    void solvePlate(const QVector<SolveDetectedStar>& stars, const SolveOptions& options);
 
 signals:
     void solveComplete(const PlatesolveResult& result);
@@ -100,8 +100,8 @@ private:
     bool initializeEngine(const SolveOptions& options);
     void cleanupEngine();
     QString findDefaultConfigFile();
-    job_t* createJobFromStars(const QVector<DetectedStar>& stars, const SolveOptions& options);
-    bool createInMemoryXylist(job_t* job, const QVector<DetectedStar>& stars, const SolveOptions& options);
+    job_t* createJobFromStars(const QVector<SolveDetectedStar>& stars, const SolveOptions& options);
+    bool createInMemoryXylist(job_t* job, const QVector<SolveDetectedStar>& stars, const SolveOptions& options);
     void setupOnefieldSolver(job_t* job, const SolveOptions& options);
     PlatesolveResult extractResultFromJob(job_t* job);
 };
@@ -131,7 +131,7 @@ public:
                           const QVector<float>& starFluxes,
                           const ImageData* imageData);
     
-    void solveFromDetectedStars(const QVector<DetectedStar>& stars,
+    void solveFromDetectedStars(const QVector<SolveDetectedStar>& stars,
                                int imageWidth, int imageHeight);
 
     // Advanced solving with validation
@@ -171,7 +171,7 @@ private:
     void initializeSolver();
     void cleanupSolver();
   /*
-    QVector<DetectedStar> convertStarsFromMask(const QVector<QPoint>& starCenters,
+    QVector<SolveDetectedStar> convertStarsFromMask(const QVector<QPoint>& starCenters,
                                                const QVector<float>& starFluxes);
   */
 };
